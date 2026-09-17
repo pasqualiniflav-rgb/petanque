@@ -39,7 +39,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C9 | **Ivresse** | ~~Plus d'aléa sur le geste ; effets visuels et sonores conservés~~ ✅ Tangage, flou, vision double et son ralenti gardés ; la main ne tremble plus | ✅ |
 | C10 | **Mode sans tournée** | ~~Option de l'hôte, préfigure la version tous publics~~ ✅ Réglage « Tournées de pastis : Avec / Sans » au salon ; sans : ni popin, ni verre surprise, ni ivresse | ✅ |
 | C11 | **Accès** | ~~🎲 prénom provençal, code auto, « Partager le lien » (?partie=CODE)~~ ✅ Web Share, sinon presse-papiers, sinon lien affiché ; le lien pré-remplit le code | ✅ |
-| D12 | **Pointé avec portée** | La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques | ⬜ |
+| D12 | **Pointé avec portée** | ~~La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques~~ ✅ 50 % en vol (elle passe par-dessus les autres), portées conservées à ±1,3 % ; banc `tests/portees.js` documenté dans BUILD.md | ✅ |
 | D13 | **Cochonnet** | Calibration propre, un peu plus vif que les boules | ⬜ |
 | D14 | **Fin de partie** | Bonus : confettis, cochonnet doré, rappel de la Fanny | ⬜ |
 

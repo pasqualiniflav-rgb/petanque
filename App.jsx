@@ -30,6 +30,8 @@ export const TERRAINS = {
     vTir: 8.5, muTir: 0.88,
     airTir: p => Math.max(60, 140 + (p / 100) * 360 - 26),
     cochMin: 170, skidSeuil: 4, skidMu: 0.94,
+    volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
+    volCoch: 0, cochVif: 1, // cochonnet : part en vol, et vivacité relative aux boules
   },
   long: {
     nom: "Long 10 m", W: 640, L: 2750,
@@ -39,6 +41,8 @@ export const TERRAINS = {
     vTir: 22, muTir: 0.86,
     airTir: p => Math.max(150, 300 + (p / 100) * 2300 - 60),
     cochMin: 1400, skidSeuil: 12, skidMu: 0.9,
+    volPoint: 0.5,
+    volCoch: 0, cochVif: 1,
   },
 };
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
@@ -153,6 +157,30 @@ function newMene(st, firstTeam, num) {
 
 // ---------- Physique ----------------------------------------------
 
+// Le corps qui part du rond, tel que le jeu ET le bot le construisent.
+// Pointé : la boule vole une part (volPoint) de sa portée puis retombe et
+// roule ; la portée totale reste celle du simple roulé de vPoint(p) qu'on
+// avait avant — vitesse de retombée (1 − volPoint)·v, portée en vol
+// volPoint·v/(1 − muRoll) — pour ne pas dérégler les terrains. En vol elle
+// ne touche rien : on peut passer par-dessus une boule. Tir : elle vole
+// jusqu'au point de chute et frappe sec. Cochonnet : même modèle, avec
+// sa propre part en vol et sa vivacité.
+export function corpsLance(T, genre, puissance, rad, sup) {
+  const DEP = departDe(T);
+  const dx = Math.sin(rad), dy = -Math.cos(rad);
+  if (genre === "tir") {
+    return { x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", tir: true,
+             mu: T.muTir, air: T.airTir(puissance), vx: dx * T.vTir, vy: dy * T.vTir, ...sup };
+  }
+  const coch = genre === "coch";
+  const v0 = T.vPoint(puissance) * (coch ? T.cochVif : 1);
+  const vol = coch ? T.volCoch : T.volPoint;
+  const portee = v0 / (1 - T.muRoll);
+  const v = (1 - vol) * v0;
+  return { x: DEP.x, y: DEP.y, r: coch ? R_COCH : R_BOULE, mass: coch ? 0.35 : 1,
+           kind: coch ? "coch" : "boule", air: vol * portee, vx: dx * v, vy: dy * v, ...sup };
+}
+
 function makeBodies(st) {
   const m = st.mene;
   const bodies = m.boules.map(b => ({ ...b, r: R_BOULE, mass: 1, vx: 0, vy: 0, kind: "boule" }));
@@ -250,21 +278,9 @@ const PRENOMS_BOT = ["Marius", "Panisse", "César", "Escartefigue", "Honorine",
 // n'est affiché ni enregistré.
 export function simulerCoup(st, T, team, angle, power, mode) {
   const bodies = makeBodies(st);
-  const DEP = departDe(T);
   const rad = (angle * Math.PI) / 180;
-  if (!st.mene.cochonnet) {
-    const v = T.vPoint(power);
-    bodies.push({ x: DEP.x, y: DEP.y, r: R_COCH, mass: 0.35, kind: "coch",
-                  vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v });
-  } else if (mode === "tir") {
-    bodies.push({ x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", tir: true, team,
-                  mu: T.muTir, air: T.airTir(power),
-                  vx: Math.sin(rad) * T.vTir, vy: -Math.cos(rad) * T.vTir });
-  } else {
-    const v = T.vPoint(power);
-    bodies.push({ x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", team,
-                  vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v });
-  }
+  const genre = !st.mene.cochonnet ? "coch" : mode === "tir" ? "tir" : "point";
+  bodies.push(corpsLance(T, genre, power, rad, genre === "coch" ? {} : { team }));
   let n = 0;
   while (stepPhysics(bodies, T) && n++ < 900) {}
   return bodies;
@@ -976,25 +992,18 @@ export function marquerTraces(bodies, T, inscrire = true) {
     const avance = b._tx === undefined ? 0 : Math.hypot(b.x - b._tx, b.y - b._ty);
     b._tx = b.x; b._ty = b.y;
 
-    // Première observation : une boule qui part du rond est lancée en
-    // cloche. La simulation la fait rouler tout du long (on n'y touche
-    // pas), mais le sillon, lui, ne commence qu'à la retombée — estimée
-    // à un peu plus du tiers de sa portée.
-    if (b._v0 === undefined) {
-      b._v0 = Math.hypot(b.vx || 0, b.vy || 0);
-      b._cloche = !enVol && b._v0 > 0.5 ? (b._v0 / (1 - T.muRoll)) * 0.38 : 0;
-      b._reste = b._cloche;
+    // Le vol est dans la simulation : on n'en déduit que la hauteur
+    // apparente (une cloche) et le moment de la retombée.
+    if (b._air0 === undefined) b._air0 = b.air || 0;
+    if (enVol) {
+      b._lob = b._air0 > 0 ? Math.sin((1 - b.air / b._air0) * Math.PI) : 0;
+      b._saut = true; // rien au sol tant qu'elle vole
+      continue;
     }
-    if (b._reste > 0 && !b.dead) {
-      b._reste -= avance;
-      b._lob = Math.sin(Math.max(0, 1 - b._reste / b._cloche) * Math.PI); // hauteur vue du dessus
-      if (b._reste > 0) { b._saut = true; continue; } // encore en l'air : rien au sol
+    if (b._tAir > 0 && !b.dead) {
       b._lob = 0;
-      if (inscrire) marquerPose(t.cx, b, ech);
+      if (inscrire) (b.tir ? marquerImpact : marquerPose)(t.cx, b, ech);
     }
-
-    // le tir retombe : son impact s'inscrit une fois pour toutes
-    if (b._tAir > 0 && !enVol && !b.dead && inscrire) marquerImpact(t.cx, b, ech);
     b._tAir = b.air || 0;
     if (!b.dead) {
       if (enVol) b._saut = true; // le vol coupe le sillon en deux tronçons
@@ -1276,7 +1285,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
   for (const b of list) {
     if (b.dead) continue;
     // ombre portée : elle s'élargit et pâlit quand la boule quitte le sol
-    const lift = b.air > 0 ? 7 : (b._lob ? b._lob * 7 : 0);
+    const lift = (b._lob || 0) * (b.tir ? 9 : 7); // hauteur apparente en vol
     const eo = b.r * (2.5 + lift * 0.1);
     ctx.globalAlpha = lift ? 0.55 : 1;
     ctx.drawImage(spriteOmbreBoule(),
@@ -1432,8 +1441,9 @@ function PanneauAide({ fermer }) {
            Ensuite joue toujours l'équipe qui n'a pas le point. Quand il n'y a plus de
            boules, on compte.`)}
         {section("Pointer ou tirer",
-          `Pointer : la boule roule et vient se coucher près du cochonnet. Tirer : elle
-           vole jusqu'à son point de chute et frappe sec — c'est comme ça qu'on fait un
+          `Pointer : la boule part en cloche, retombe à mi-chemin et roule jusqu'au
+           cochonnet — en l'air, elle passe par-dessus les autres. Tirer : elle vole
+           jusqu'à son point de chute et frappe sec — c'est comme ça qu'on fait un
            carreau.`)}
         {section("Les réglages",
           `Direction et force sont remélangées avant chaque coup et les chiffres restent
@@ -1985,7 +1995,6 @@ export default function Petanque() {
     setNotice("");
     const st = structuredClone(latest);
     const Ts = terrainDe(st);
-    const DEP = departDe(Ts);
     const bodies = makeBodies(st);
     // L'ivresse ne touche plus au geste (décision des joueurs : le flou
     // suffit) ; seule l'imprécision naturelle du lancer demeure, et elle
@@ -1995,28 +2004,8 @@ export default function Petanque() {
     const noise = (Math.random() - 0.5) * 3 * (powerV / 100) * echelle;
     const puissance = Math.min(100, Math.max(25, powerV));
     const rad = ((angleV + noise) * Math.PI) / 180;
-    let thrown;
-    if (!st.mene.cochonnet) {
-      // lancer du cochonnet pour ouvrir la mène
-      const v = Ts.vPoint(puissance);
-      thrown = {
-        x: DEP.x, y: DEP.y, r: R_COCH, mass: 0.35, kind: "coch", pid,
-        vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v,
-      };
-    } else if (modeV === "tir") {
-      // tir au fer : la boule vole jusqu'au point de chute puis frappe sec
-      thrown = {
-        x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", tir: true,
-        team: lanceur.team, pid, mu: Ts.muTir, air: Ts.airTir(puissance),
-        vx: Math.sin(rad) * Ts.vTir, vy: -Math.cos(rad) * Ts.vTir,
-      };
-    } else {
-      const v = Ts.vPoint(puissance);
-      thrown = {
-        x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule",
-        team: lanceur.team, pid, vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v,
-      };
-    }
+    const genre = !st.mene.cochonnet ? "coch" : modeV === "tir" ? "tir" : "point";
+    const thrown = corpsLance(Ts, genre, puissance, rad, genre === "coch" ? { pid } : { team: lanceur.team, pid });
     bodies.push({ ...thrown });
     // Annonce immédiate du lancer : les autres appareils le rejouent en direct,
     // au même top départ — la physique déterministe garantit le même résultat
