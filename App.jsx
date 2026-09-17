@@ -1547,20 +1547,8 @@ export default function Petanque() {
 
   useEffect(() => { reglerIvresseCigales(ivresseNiveau); }, [ivresseNiveau]);
 
-  // Le son est actif « par défaut » : les navigateurs exigeant un geste,
-  // il démarre au tout premier clic ou tap, où qu'il soit sur la page
-  const autoSonRef = useRef(false);
-  useEffect(() => {
-    const armer = () => {
-      if (autoSonRef.current) return;
-      autoSonRef.current = true;
-      setCigales(true);
-      demarrerCigales();
-      demarrerAmbiance().then(ok => { if (ok) setAmbiance(true); }); // muet sans fichier, sans message
-    };
-    window.addEventListener("pointerdown", armer, { once: true });
-    return () => window.removeEventListener("pointerdown", armer);
-  }, []);
+  // Le son ne part que sur demande : 🦗 et 🎵 sont les seuls déclencheurs
+  // (décision des joueurs de la partie test).
 
   // Une tournée vient d'être offerte : grande animation chez les arrosés,
   // simple annonce chez les autres
