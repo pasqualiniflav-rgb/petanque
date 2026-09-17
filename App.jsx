@@ -17,7 +17,7 @@ const TEAM_NAMES = { A: "Équipe ciel", B: "Équipe rouge", C: "Équipe ocre" };
 const CRIS = ["Oh peuchère !", "Tè, vé !", "Oh fan de chichourle !", "Boudiou !", "Adieu vat !"];
 const TARGET = 13;
 const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le travail
-const TEMPS_LANCER = 15; // secondes par lancer
+const TEMPS_LANCER = 20; // secondes par lancer
 
 // Chaque terrain porte sa géométrie et sa calibration physique.
 export const TERRAINS = {
@@ -1423,7 +1423,7 @@ function PanneauAide({ fermer }) {
            carreau.`)}
         {section("Les réglages",
           `Direction et force sont remélangées avant chaque coup et les chiffres restent
-           cachés : ça se juge à l'œil, comme au vrai jeu. Quinze secondes par lancer,
+           cachés : ça se juge à l'œil, comme au vrai jeu. Vingt secondes par lancer,
            après quoi la boule part toute seule.`)}
         {section("Boule morte",
           `Une boule qui franchit la ligne du fond est perdue. Sur les côtés, elle ne

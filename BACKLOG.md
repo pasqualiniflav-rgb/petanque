@@ -34,7 +34,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | B4 | **Scoreboard de stade** | ~~Panneau d'affichage compact façon fronton de boulodrome~~ ✅ Fond sombre, chiffres lumineux, une colonne par équipe (score, ●, 🍹, qui tient le point), ligne de jeu avec mène, joueur au tour, chronomètre et outils | ✅ |
 | B5 | **Boutons** | ~~Suppression d'Actualiser, ↺ pour revoir, ⌂ retour accueil~~ ✅ Outils regroupés dans le fronton : ↺ (quand un coup est à revoir), 🦗, 🎵, ?, ⌂ ; ⌂ aussi au salon | ✅ |
 | C6 | **Sons** | ~~Plus de démarrage automatique : 🦗 et 🎵 seuls déclencheurs~~ ✅ | ✅ |
-| C7 | **Chronomètre** | 15 → 20 s | ⬜ |
+| C7 | **Chronomètre** | ~~15 → 20 s~~ ✅ (24 s de grâce avant qu'un autre appareil ne lance pour un absent) | ✅ |
 | C8 | **Tournée** | Popin bloquante pour l'équipe gagnante, expiration 20 s → Passer | ⬜ |
 | C9 | **Ivresse** | Plus d'aléa sur le geste ; effets visuels et sonores conservés | ⬜ |
 | C10 | **Mode sans tournée** | Option de l'hôte, préfigure la version tous publics | ⬜ |
