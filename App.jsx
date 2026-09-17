@@ -131,7 +131,7 @@ function makeBodies(st) {
   return bodies;
 }
 
-function stepPhysics(bodies, T) {
+export function stepPhysics(bodies, T) {
   let moving = false;
   const n = T.subSteps; // sous-pas : pas de tunnel à haute vitesse sur le grand terrain
   for (let s = 0; s < n; s++) {
@@ -723,6 +723,154 @@ function nuancesDuSable(T) {
   return cv;
 }
 
+// ---------- Traces dans le sable ----------------------------------
+// Calque local, jamais synchronisé : chaque appareil rejoue les mêmes
+// lancers, donc tout le monde voit naturellement les mêmes traces sans
+// qu'on ait besoin de les échanger.
+
+// Deux calques : celui des coups passés (cv) et celui du coup en cours
+// (tmp), redessiné d'un trait à chaque image puis fusionné à l'arrivée.
+// Sans cela le sillon se repeindrait des centaines de fois sur lui-même.
+let traces = null;
+
+function calqueTraces(T) {
+  const cle = T.W + "x" + T.L;
+  if (traces && traces.cle === cle) return traces;
+  const ech = T.camera ? 0.5 : 1; // le grand terrain se contente d'un demi-calque
+  const w = Math.round(T.W * ech), h = Math.round(T.L * ech);
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const tmp = document.createElement("canvas");
+  tmp.width = w; tmp.height = h;
+  traces = { cv, cx: cv.getContext("2d"), tmp, tcx: tmp.getContext("2d"), cle, ech };
+  return traces;
+}
+
+function reinitialiserTraces() {
+  if (!traces) return;
+  traces.cx.clearRect(0, 0, traces.cv.width, traces.cv.height);
+  traces.tcx.clearRect(0, 0, traces.tmp.width, traces.tmp.height);
+}
+
+// Entre deux mènes le terrain est ratissé : il n'en reste qu'un souvenir
+function estomperTraces(garde) {
+  if (!traces) return;
+  const { cx, cv } = traces;
+  cx.save();
+  cx.globalCompositeOperation = "destination-out";
+  cx.fillStyle = `rgba(0,0,0,${1 - garde})`;
+  cx.fillRect(0, 0, cv.width, cv.height);
+  cx.restore();
+}
+
+// Le coup est joué : son sillon rejoint les anciens
+export function fusionnerTraces() {
+  if (!traces) return;
+  traces.cx.drawImage(traces.tmp, 0, 0);
+  traces.tcx.clearRect(0, 0, traces.tmp.width, traces.tmp.height);
+}
+
+// Point de chute d'un tir : cratère, bourrelet et sable projeté devant
+function marquerImpact(cx, b, ech) {
+  const x = b.x * ech, y = b.y * ech, r = b.r * ech;
+  cx.fillStyle = "rgba(96,74,42,0.14)";
+  cx.beginPath(); cx.ellipse(x, y, r * 1.15, r * 0.95, 0, 0, Math.PI * 2); cx.fill();
+  cx.strokeStyle = "rgba(252,246,228,0.12)";
+  cx.lineWidth = Math.max(1, r * 0.4);
+  cx.beginPath(); cx.ellipse(x, y, r * 1.32, r * 1.1, 0, 0, Math.PI * 2); cx.stroke();
+  const ang = Math.atan2(b.vy, b.vx);
+  cx.strokeStyle = "rgba(240,230,200,0.1)";
+  cx.lineWidth = Math.max(1, r * 0.18);
+  for (let i = -2; i <= 2; i++) {
+    const a = ang + i * 0.3, d = r * 1.15, l = r * (2.3 - Math.abs(i) * 0.5);
+    cx.beginPath();
+    cx.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+    cx.lineTo(x + Math.cos(a) * (d + l), y + Math.sin(a) * (d + l));
+    cx.stroke();
+  }
+}
+
+// Appelée à chaque image de la simulation : ce qui roule creuse son
+// sillon, ce qui retombe marque son impact. Elle ne fait que lire la
+// position des corps — la physique l'ignore complètement.
+// Atterrissage d'un pointé : la boule se pose, elle ne creuse presque rien
+function marquerPose(cx, b, ech) {
+  const x = b.x * ech, y = b.y * ech, r = b.r * ech;
+  cx.fillStyle = "rgba(96,74,42,0.09)";
+  cx.beginPath(); cx.ellipse(x, y, r * 0.95, r * 0.78, 0, 0, Math.PI * 2); cx.fill();
+  cx.strokeStyle = "rgba(250,244,226,0.08)";
+  cx.lineWidth = Math.max(1, r * 0.26);
+  cx.beginPath(); cx.ellipse(x, y, r * 1.12, r * 0.92, 0, 0, Math.PI * 2); cx.stroke();
+}
+
+// Appelée à chaque image de la simulation : ce qui roule écarte un peu de
+// sable, ce qui retombe marque son point de chute. Elle ne fait que lire
+// la position des corps — la physique l'ignore complètement.
+// `inscrire` à faux pendant un « Revoir » : on suit le vol sans creuser.
+export function marquerTraces(bodies, T, inscrire = true) {
+  const t = calqueTraces(T);
+  const { tcx, ech } = t;
+  if (inscrire) {
+    tcx.clearRect(0, 0, t.tmp.width, t.tmp.height);
+    tcx.lineCap = "round";
+    tcx.lineJoin = "round";
+  }
+  for (const b of bodies) {
+    const enVol = b.air > 0;
+    const avance = b._tx === undefined ? 0 : Math.hypot(b.x - b._tx, b.y - b._ty);
+    b._tx = b.x; b._ty = b.y;
+
+    // Première observation : une boule qui part du rond est lancée en
+    // cloche. La simulation la fait rouler tout du long (on n'y touche
+    // pas), mais le sillon, lui, ne commence qu'à la retombée — estimée
+    // à un peu plus du tiers de sa portée.
+    if (b._v0 === undefined) {
+      b._v0 = Math.hypot(b.vx || 0, b.vy || 0);
+      b._cloche = !enVol && b._v0 > 0.5 ? (b._v0 / (1 - T.muRoll)) * 0.38 : 0;
+      b._reste = b._cloche;
+    }
+    if (b._reste > 0 && !b.dead) {
+      b._reste -= avance;
+      b._lob = Math.sin(Math.max(0, 1 - b._reste / b._cloche) * Math.PI); // hauteur vue du dessus
+      if (b._reste > 0) { b._saut = true; continue; } // encore en l'air : rien au sol
+      b._lob = 0;
+      if (inscrire) marquerPose(t.cx, b, ech);
+    }
+
+    // le tir retombe : son impact s'inscrit une fois pour toutes
+    if (b._tAir > 0 && !enVol && !b.dead && inscrire) marquerImpact(t.cx, b, ech);
+    b._tAir = b.air || 0;
+    if (!b.dead) {
+      if (enVol) b._saut = true; // le vol coupe le sillon en deux tronçons
+      else {
+        const segs = b._sillon || (b._sillon = []);
+        if (b._saut || !segs.length) { segs.push([]); b._saut = false; }
+        const seg = segs[segs.length - 1];
+        const der = seg[seg.length - 1];
+        if (!der || Math.hypot(b.x - der.x, b.y - der.y) > 1.5) seg.push({ x: b.x, y: b.y });
+      }
+    }
+    const segs = b._sillon;
+    if (!segs || !inscrire) continue;
+    const w = b.r * (b.kind === "coch" ? 0.75 : 0.95) * ech;
+    const tracer = (couleur, largeur, depuis) => {
+      tcx.strokeStyle = couleur;
+      tcx.lineWidth = largeur;
+      tcx.beginPath();
+      for (const seg of segs) {
+        const d = depuis ? Math.max(0, seg.length - 14) : 0;
+        if (seg.length - d < 2) continue;
+        tcx.moveTo(seg[d].x * ech, seg[d].y * ech);
+        for (let i = d + 1; i < seg.length; i++) tcx.lineTo(seg[i].x * ech, seg[i].y * ech);
+      }
+      tcx.stroke();
+    };
+    tracer("rgba(250,243,223,0.055)", w * 1.4);   // sable écarté sur les bords
+    tracer("rgba(100,76,42,0.06)", w);            // passage de la boule
+    tracer("rgba(100,76,42,0.05)", w * 0.8, true); // elle s'appuie un peu en finissant
+  }
+}
+
 // ---------- Dessin ------------------------------------------------
 
 export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
@@ -772,6 +920,15 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     (vue.x / T.W) * nu.width, (vue.y / T.L) * nu.height,
     (vue.w / T.W) * nu.width, (vue.h / T.L) * nu.height,
     vue.x, vue.y, vue.w, vue.h);
+
+  // traces laissées par les boules depuis le début de la partie
+  const tr = calqueTraces(T);
+  for (const calque of [tr.cv, tr.tmp]) {
+    ctx.drawImage(calque,
+      (vue.x / T.W) * calque.width, (vue.y / T.L) * calque.height,
+      (vue.w / T.W) * calque.width, (vue.h / T.L) * calque.height,
+      vue.x, vue.y, vue.w, vue.h);
+  }
   // ombres de platanes le long du terrain : le soleil est bas, elles
   // s'étirent vers l'intérieur depuis les arbres plantés sur les côtés
   const texOmbre = textureOmbrePlatane();
@@ -806,7 +963,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   for (const b of list) {
     if (b.dead) continue;
     // ombre (décalée quand la boule vole, pendant un tir)
-    const lift = b.air > 0 ? 7 : 0;
+    const lift = b.air > 0 ? 7 : (b._lob ? b._lob * 7 : 0);
     ctx.beginPath();
     ctx.fillStyle = "rgba(70,55,30,0.25)";
     ctx.ellipse(b.x + 2, b.y + 4 + lift, b.r, b.r * 0.8, 0, 0, Math.PI * 2);
@@ -941,6 +1098,16 @@ export default function Petanque() {
   // Photo de décor optionnelle : cherchée une fois, elle remplace le dessin
   useEffect(() => { chargerPhotoDecor(() => setDecorPret(x => x + 1)); }, []);
 
+  // Traces dans le sable : terrain neuf au début de la partie, ratissé
+  // entre deux mènes (il en reste un souvenir).
+  const meneTracesRef = useRef(-1);
+  useEffect(() => {
+    if (!game || game.phase !== "playing" || !game.mene) { meneTracesRef.current = -1; return; }
+    if (meneTracesRef.current === -1) reinitialiserTraces();
+    else if (meneTracesRef.current !== game.mene.num) estomperTraces(0.3);
+    meneTracesRef.current = game.mene.num;
+  }, [game?.phase, game?.mene?.num]);
+
   useEffect(() => { reglerIvresseCigales(ivresseNiveau); }, [ivresseNiveau]);
 
   // Le son est actif « par défaut » : les navigateurs exigeant un geste,
@@ -998,13 +1165,18 @@ export default function Petanque() {
     setNotice(etiquette || (who ? `${who.name} joue…` : "Lancer en cours…"));
     setAnimating(true);
     const ctx = cv.getContext("2d");
+    const marquer = !etiquette; // un « Revoir » ne recreuse pas le terrain
     let frames = 0;
     const loop = () => {
       const moving = stepPhysics(bodies, Tg);
+      marquerTraces(bodies, Tg, marquer);
       drawField(ctx, g, bodies, null, ivresse, Tg);
       frames++;
       if (moving && frames < 1200) requestAnimationFrame(loop);
-      else { setAnimating(false); setNotice(""); refreshRef.current && refreshRef.current(); }
+      else {
+        if (marquer) fusionnerTraces();
+        setAnimating(false); setNotice(""); refreshRef.current && refreshRef.current();
+      }
     };
     const delai = etiquette ? 0 : Math.max(0, (g.replay.startAt || 0) - Date.now());
     setTimeout(() => requestAnimationFrame(loop), delai);
@@ -1247,10 +1419,11 @@ export default function Petanque() {
     let frames = 0;
     const loop = () => {
       const moving = stepPhysics(bodies, Ts);
+      marquerTraces(bodies, Ts);
       drawField(ctx, st, bodies, null, ivresse, Ts);
       frames++;
       if (moving && frames < 1200) { requestAnimationFrame(loop); }
-      else { commit(st, bodies, thrown, replayMeta, pid); }
+      else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid); }
     };
     setTimeout(() => { setNotice(""); requestAnimationFrame(loop); }, Math.max(0, replayMeta.startAt - Date.now()));
   }
