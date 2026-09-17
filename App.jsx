@@ -1415,6 +1415,10 @@ export default function Petanque() {
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
   const [aide, setAide] = useState(false);
+  // Tapis figé à l'écran entre un lancer et la suite (voir « figer »)
+  const [gel, setGel] = useState(null);
+  const gelRef = useRef(null);
+  gelRef.current = gel;
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
@@ -1425,6 +1429,18 @@ export default function Petanque() {
   const tourneeBotRef = useRef("");   // ... et pour sa tournée
   const attenteTourneeRef = useRef(0); // depuis quand un bot attend une tournée
   gameRef.current = game;
+
+  // Le chronomètre part du moment où CET appareil voit le tour commencer,
+  // jamais de l'horloge de celui qui a enregistré l'état : deux téléphones
+  // décalés de quelques secondes déclenchaient des lancers automatiques
+  // avant l'heure. Mis à jour au rendu même, pour que tout ce qui suit
+  // dans ce rendu lise déjà la bonne valeur.
+  const revVuRef = useRef(null);
+  const tourDepuisRef = useRef(Date.now());
+  if (game && game.rev !== revVuRef.current) {
+    revVuRef.current = game.rev;
+    tourDepuisRef.current = Date.now();
+  }
 
   const me = game?.players.find(p => p.id === meId) || null;
   // Qui mène la partie (salon, propositions, coups des bots) : le premier
@@ -1460,10 +1476,11 @@ export default function Petanque() {
   const meneTracesRef = useRef(-1);
   useEffect(() => {
     if (!game || game.phase !== "playing" || !game.mene) { meneTracesRef.current = -1; return; }
+    if (gel) return; // on ratisse quand le tapis final a été vu
     if (meneTracesRef.current === -1) reinitialiserTraces();
     else if (meneTracesRef.current !== game.mene.num) estomperTraces(0.3);
     meneTracesRef.current = game.mene.num;
-  }, [game?.phase, game?.mene?.num]);
+  }, [game?.phase, game?.mene?.num, gel]);
 
   useEffect(() => { reglerIvresseCigales(ivresseNiveau); }, [ivresseNiveau]);
 
@@ -1506,6 +1523,44 @@ export default function Petanque() {
   animatingRef.current = animating;
   const refreshRef = useRef(null);
 
+  // Le drapeau doit suivre tout de suite : `refresh` le consulte dans la
+  // foulée d'un setAnimating, avant tout nouveau rendu. Sans cela, le
+  // rafraîchissement de fin de rejeu se croyait encore en animation et ne
+  // faisait rien — le spectateur restait sur l'état d'avant le lancer
+  // jusqu'au sondage suivant, puis tout sautait d'un coup.
+  const poserAnimating = useCallback(v => { animatingRef.current = v; setAnimating(v); }, []);
+
+  // Après un lancer, on garde à l'écran les boules telles que la simulation
+  // les a laissées : jusqu'à l'arrivée du résultat officiel (au plus 8 s),
+  // et au moins 3 s quand la mène vient de se terminer, pour que chacun
+  // voie où ça s'est joué avant que le terrain ne soit ratissé.
+  const verifierGel = useCallback(() => {
+    const g = gelRef.current;
+    if (!g) return;
+    const now = Date.now();
+    if (now >= g.max || (g.commit && now >= g.min)) { gelRef.current = null; setGel(null); }
+  }, []);
+  const figer = useCallback((bodies, rev, finMene, commitConnu) => {
+    const now = Date.now();
+    const g = { bodies, rev, finMene, commit: commitConnu,
+                min: finMene ? now + 3200 : 0, max: now + (commitConnu ? 3200 : 8000) };
+    gelRef.current = g; setGel(g);
+    setTimeout(verifierGel, g.min - now + 20);
+    setTimeout(verifierGel, g.max - now + 20);
+  }, [verifierGel]);
+  // Le résultat officiel tarde (flux temps réel muet, lanceur plus lent) :
+  // on va le chercher à intervalles courts au lieu d'attendre le sondage.
+  const rattraper = useCallback((rev) => {
+    let n = 0;
+    const essai = async () => {
+      const g = gelRef.current;
+      if (!g || g.rev !== rev || g.commit) return;
+      if (refreshRef.current) await refreshRef.current();
+      if (++n < 6) setTimeout(essai, 500 * n);
+    };
+    setTimeout(essai, 400);
+  }, []);
+
   // Rejoue un lancer sur cet appareil (flux entrant, ou bouton « Revoir »)
   const lancerAnimationReplay = useCallback((g, etiquette) => {
     const cv = canvasRef.current;
@@ -1520,13 +1575,29 @@ export default function Petanque() {
     const ivresse = Math.min(6, (g.drinks && moi && g.drinks[moi.team]) || 0);
     const who = g.players.find(p => p.id === g.replay.thrown.pid);
     setNotice(etiquette || (who ? `${who.name} joue…` : "Lancer en cours…"));
-    setAnimating(true);
+    poserAnimating(true);
     const ctx = cv.getContext("2d");
     const marquer = !etiquette; // un « Revoir » ne recreuse pas le terrain
     let frames = 0;
     const finir = () => {
       if (marquer) fusionnerTraces();
-      setAnimating(false); setNotice(""); refreshRef.current && refreshRef.current();
+      poserAnimating(false); setNotice("");
+      if (marquer) {
+        // Même physique, mêmes boules : le résultat se devine déjà. On le
+        // garde à l'écran, et on va chercher la version officielle.
+        const coch = bodies.find(b => b.kind === "coch");
+        const prov = structuredClone(g);
+        prov.mene.cochonnet = coch ? { x: coch.x, y: coch.y } : null;
+        prov.mene.boules = bodies.filter(b => b.kind === "boule" && !b.dead)
+          .map(b => ({ x: b.x, y: b.y, team: b.team, pid: b.pid }));
+        const pid = g.replay.thrown.pid;
+        if (g.replay.thrown.kind !== "coch" && pid) {
+          prov.mene.left[pid] = Math.max(0, (prov.mene.left[pid] || 0) - 1);
+        }
+        figer(bodies, g.rev, nextToPlay(prov) === null, false);
+        rattraper(g.rev);
+      }
+      refreshRef.current && refreshRef.current();
     };
     const loop = () => {
       try {
@@ -1538,20 +1609,25 @@ export default function Petanque() {
         else finir();
       } catch (e) { finir(); }
     };
-    const delai = etiquette ? 0 : Math.max(0, (g.replay.startAt || 0) - Date.now());
+    // Le top départ vient de l'horloge du lanceur : on le borne, une horloge
+    // décalée ne doit ni retarder le rejeu de dix secondes ni le faire
+    // partir avant que l'annonce soit complète.
+    const delai = etiquette ? 0 : Math.min(1500, Math.max(0, (g.replay.startAt || 0) - Date.now()));
     setTimeout(() => requestAnimationFrame(loop), delai);
-  }, []);
+  }, [poserAnimating, figer, rattraper]);
 
   // Intégrer un état reçu (par le flux temps réel ou par le sondage de secours)
   const integrer = useCallback((g) => {
     if (!g || animatingRef.current) return;
     if (gameRef.current && g.rev <= (gameRef.current.rev || 0)) return;
     setGame(g);
+    const gelEnCours = gelRef.current;
+    if (gelEnCours && g.rev > gelEnCours.rev) { gelEnCours.commit = true; verifierGel(); }
     if (g.replay && g.replay.id !== replayedRef.current) {
       replayedRef.current = g.replay.id;
       lancerAnimationReplay(g);
     }
-  }, [lancerAnimationReplay]);
+  }, [lancerAnimationReplay, verifierGel]);
 
   const refresh = useCallback(async () => {
     if (!code || animatingRef.current) return;
@@ -1596,13 +1672,13 @@ export default function Petanque() {
     return () => clearInterval(t);
   }, [game?.phase, animating]);
 
-  const ecouleMs = game && game.phase === "playing" ? Date.now() - (game.rev || 0) : 0;
+  const ecouleMs = game && game.phase === "playing" ? Date.now() - tourDepuisRef.current : 0;
   const resteTemps = Math.max(0, TEMPS_LANCER - Math.floor(ecouleMs / 1000));
 
   // Timer dépassé : le joueur lance au hasard tout seul ; si son appareil
   // est absent, un autre appareil exécute le lancer pour lui (4 s de grâce)
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || !turnId) return;
+    if (!game || game.phase !== "playing" || animating || gel || !turnId) return;
     const marque = turnId + ":" + (game.rev || 0);
     if (autoLancerRef.current === marque) return;
     const amax = terrainDe(game).angleMax;
@@ -1626,7 +1702,7 @@ export default function Petanque() {
   // pour lui. Un seul appareil s'en charge, les autres reçoivent le coup
   // par le chemin habituel et le rejouent.
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || !turnId || !isHost) return;
+    if (!game || game.phase !== "playing" || animating || gel || !turnId || !isHost) return;
     const lui = game.players.find(p => p.id === turnId);
     if (!lui || !lui.bot) return;
     // Une tournée en attente chez une équipe de bots se règle d'abord :
@@ -1673,8 +1749,8 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    drawField(cv.getContext("2d"), game, null, myTurn ? { angle } : null, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret]);
+    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, myTurn && !gel ? { angle } : null, ivresseNiveau, T);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -1808,17 +1884,17 @@ export default function Petanque() {
   async function throwBoule(pid = meId, angleV = angle, powerV = power, modeV = mode, auto = false) {
     if (animating) return;
     if (pid === meId && !myTurn) return;
-    setAnimating(true);
+    poserAnimating(true);
     // Revérifier avec la dernière version : quelqu'un a pu jouer entre-temps
     const latest = (await loadGame(code)) || game;
     if (latest.phase !== "playing" || nextToPlay(latest) !== pid) {
       setGame(latest);
-      setAnimating(false);
+      poserAnimating(false);
       setNotice("Le jeu a évolué entre-temps — vérifie que c'est bien ton tour.");
       return;
     }
     const lanceur = latest.players.find(p => p.id === pid);
-    if (!lanceur) { setAnimating(false); return; }
+    if (!lanceur) { poserAnimating(false); return; }
     setNotice("");
     const st = structuredClone(latest);
     const Ts = terrainDe(st);
@@ -1882,8 +1958,8 @@ export default function Petanque() {
         if (moving && frames < 1200) { requestAnimationFrame(loop); }
         else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid, auto); }
       } catch (e) {
-        setAnimating(false); // jamais bloquer la partie sur un souci d'affichage
-        setNotice("Souci d'affichage pendant le lancer — appuie sur Actualiser.");
+        poserAnimating(false); // jamais bloquer la partie sur un souci d'affichage
+        setNotice("Souci d'affichage pendant le lancer — le jeu se resynchronise.");
       }
     };
     setTimeout(() => { setNotice(""); requestAnimationFrame(loop); }, Math.max(0, replayMeta.startAt - Date.now()));
@@ -1895,7 +1971,7 @@ export default function Petanque() {
     const wasCochThrow = !st.mene.cochonnet;
     const coch = bodies.find(b => b.kind === "coch");
     if (wasCochThrow && Math.hypot(coch.x - DEP.x, coch.y - DEP.y) < Ts.cochMin) {
-      setAnimating(false);
+      poserAnimating(false);
       randomizeAim();
       botRef.current = ""; // un bot doit pouvoir le relancer
       setNotice("Cochonnet trop court — relance-le !");
@@ -1916,7 +1992,9 @@ export default function Petanque() {
     st.absents = st.absents || {};
     const quiLance = st.players.find(p => p.id === pid);
     if (quiLance && !quiLance.bot) st.absents[pid] = auto ? (st.absents[pid] || 0) + 1 : 0;
+    let finMene = false;
     if (nextToPlay(st) === null) {
+      finMene = true;
       const res = scoreMene(st);
       if (res) {
         st.scores[res.team] += res.pts;
@@ -1939,10 +2017,11 @@ export default function Petanque() {
         newMene(st, st.mene.firstTeam, st.mene.num + 1);
       }
     }
+    if (finMene) figer(bodies, st.rev, true, true); // on laisse voir le tapis final
     setGame(st);
-    setAnimating(false);
+    poserAnimating(false);
     randomizeAim();
-    if (!(await saveGame(code, st))) setNotice("Échec de synchronisation — appuie sur Actualiser puis rejoue.");
+    if (!(await saveGame(code, st))) setNotice("Échec de synchronisation — le jeu réessaiera.");
   }
 
   // --- rendu ------------------------------------------------------
@@ -2165,7 +2244,9 @@ export default function Petanque() {
       ) : (
         <>
           <p style={S.turn}>
-            {myTurn
+            {gel && !gel.commit
+              ? "On attend le résultat du lancer…"
+              : myTurn
               ? `À toi de jouer, ${me?.name} ! (${game.mene.left[meId]} boule${game.mene.left[meId] > 1 ? "s" : ""}) — ⏱ ${resteTemps} s`
               : `Mène ${game.mene.num} — au tour de ${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"} (${TEAM_NAMES[turnPlayer?.team] ?? ""}) — ⏱ ${resteTemps} s`}
           </p>
@@ -2181,7 +2262,7 @@ export default function Petanque() {
           }}>
             <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas} />
           </div>
-          {myTurn && !animating && (
+          {myTurn && !animating && !gel && (
             <div style={S.card}>
               {cochToThrow ? (
                 <label style={S.label}>Tu ouvres la mène : lance d'abord le cochonnet.</label>
@@ -2200,7 +2281,7 @@ export default function Petanque() {
               </button>
             </div>
           )}
-          {!myTurn && !animating && (
+          {!myTurn && !animating && !gel && (
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button style={S.btnGhost} onClick={refresh}>Actualiser</button>
               {game.replay && (

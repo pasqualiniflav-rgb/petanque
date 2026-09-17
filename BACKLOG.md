@@ -24,6 +24,25 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | 7 | **Reprise de partie** | ~~Rejoindre en cours de partie proprement~~ ✅ Fait : on entre dans une équipe engagée et on reçoit ses boules à la mène suivante ; spectateur seulement si toutes les places sont prises | M | — |
 | 8 | **QA multi-supports** | Passe complète PC (Chrome/Firefox/Safari/Edge) + mobiles, corrections | M | — |
 
+## 📱 Sprint mobile — retours de la partie test *(item 8)*
+
+| # | Item | Détail | État |
+|---|------|--------|------|
+| A1 | **Synchro** | ~~Sauts/coupures entre un lancer, son affichage et le tour suivant~~ ✅ Corrigé — le rafraîchissement de fin de rejeu se croyait encore en animation et ne faisait rien (attente du sondage, 0-4 s) ; résultat officiel désormais en ~30 ms, tapis figé le temps qu'il arrive, pause de 3 s sur le tapis final en fin de mène, chronomètre local (plus de dérive d'horloge entre téléphones) | ✅ |
+| B2 | **Lancer au doigt** | Glisser-relâcher sur le terrain : direction + force, flèche de visée ; curseurs gardés en option | ⬜ |
+| B3 | **Mise en page mobile** | Zéro scroll, terrain agrandi, zones tactiles ≥ 44 px | ⬜ |
+| B4 | **Scoreboard de stade** | Panneau d'affichage compact façon fronton de boulodrome | ⬜ |
+| B5 | **Boutons** | Suppression d'Actualiser, ↺ pour revoir, ⌂ retour accueil | ⬜ |
+| C6 | **Sons** | Plus de démarrage automatique : 🦗 et 🎵 seuls déclencheurs | ⬜ |
+| C7 | **Chronomètre** | 15 → 20 s | ⬜ |
+| C8 | **Tournée** | Popin bloquante pour l'équipe gagnante, expiration 20 s → Passer | ⬜ |
+| C9 | **Ivresse** | Plus d'aléa sur le geste ; effets visuels et sonores conservés | ⬜ |
+| C10 | **Mode sans tournée** | Option de l'hôte, préfigure la version tous publics | ⬜ |
+| C11 | **Accès** | 🎲 prénom provençal, code auto, « Partager le lien » (?partie=CODE) | ⬜ |
+| D12 | **Pointé avec portée** | La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques | ⬜ |
+| D13 | **Cochonnet** | Calibration propre, un peu plus vif que les boules | ⬜ |
+| D14 | **Fin de partie** | Bonus : confettis, cochonnet doré, rappel de la Fanny | ⬜ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
