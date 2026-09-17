@@ -18,6 +18,7 @@ const CRIS = ["Oh peuchère !", "Tè, vé !", "Oh fan de chichourle !", "Boudiou
 const TARGET = 13;
 const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le travail
 const TEMPS_LANCER = 20; // secondes par lancer
+const TEMPS_TOURNEE = 20; // secondes pour choisir à qui offrir la tournée
 
 // Chaque terrain porte sa géométrie et sa calibration physique.
 export const TERRAINS = {
@@ -1490,7 +1491,7 @@ export default function Petanque() {
   const autoLancerRef = useRef(""); // évite de déclencher deux fois le lancer du timer
   const botRef = useRef("");        // idem pour le coup d'un bot
   const tourneeBotRef = useRef("");   // ... et pour sa tournée
-  const attenteTourneeRef = useRef(0); // depuis quand un bot attend une tournée
+  const tourneeExpRef = useRef("");   // expiration de la tournée déjà appliquée
   gameRef.current = game;
 
   // Le chronomètre part du moment où CET appareil voit le tour commencer,
@@ -1504,6 +1505,16 @@ export default function Petanque() {
     revVuRef.current = game.rev;
     tourDepuisRef.current = Date.now();
   }
+  // Une tournée en attente bloque la mène suivante : personne ne lance
+  // tant que l'équipe gagnante n'a pas choisi (ou laissé passer 20 s).
+  const tourneeEnAttente = !!game && game.phase === "playing" && !!game.tourneePending;
+  const tourneeVueRef = useRef(null);
+  const tourneeDepuisRef = useRef(Date.now());
+  if ((game?.tourneePending || null) !== tourneeVueRef.current) {
+    tourneeVueRef.current = game?.tourneePending || null;
+    tourneeDepuisRef.current = Date.now();
+  }
+  const tourneeReste = Math.max(0, TEMPS_TOURNEE - Math.floor((Date.now() - tourneeDepuisRef.current) / 1000));
 
   const me = game?.players.find(p => p.id === meId) || null;
   // Qui mène la partie (salon, propositions, coups des bots) : le premier
@@ -1729,7 +1740,7 @@ export default function Petanque() {
   // Timer dépassé : le joueur lance au hasard tout seul ; si son appareil
   // est absent, un autre appareil exécute le lancer pour lui (4 s de grâce)
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || gel || !turnId) return;
+    if (!game || game.phase !== "playing" || animating || gel || tourneeEnAttente || !turnId) return;
     const marque = turnId + ":" + (game.rev || 0);
     if (autoLancerRef.current === marque) return;
     const amax = terrainDe(game).angleMax;
@@ -1753,18 +1764,9 @@ export default function Petanque() {
   // pour lui. Un seul appareil s'en charge, les autres reçoivent le coup
   // par le chemin habituel et le rejouent.
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || gel || !turnId || !isHost) return;
+    if (!game || game.phase !== "playing" || animating || gel || tourneeEnAttente || !turnId || !isHost) return;
     const lui = game.players.find(p => p.id === turnId);
     if (!lui || !lui.bot) return;
-    // Une tournée en attente chez une équipe de bots se règle d'abord :
-    // sinon le coup suivant, parti d'une copie plus ancienne, l'effacerait.
-    // Mais on n'attend pas indéfiniment : une tournée ne bloque pas la partie.
-    if (game.tourneePending && !game.players.some(p => p.team === game.tourneePending && !p.bot)) {
-      if (!attenteTourneeRef.current) attenteTourneeRef.current = Date.now();
-      if (Date.now() - attenteTourneeRef.current < 4000) return;
-    } else {
-      attenteTourneeRef.current = 0;
-    }
     const marque = turnId + ":" + (game.rev || 0);
     if (botRef.current === marque) return;
     botRef.current = marque;
@@ -1778,6 +1780,16 @@ export default function Petanque() {
       const coup = coupDuBot(g, terrainDe(g), lui); // il essaie ses lancers dans sa tête
       throwBoule(turnId, coup.angle, coup.power, coup.mode);
     }, 1200);
+  });
+
+  // Passé le délai, l'hôte passe la tournée pour l'équipe qui n'a pas
+  // choisi : une tournée ne bloque jamais une partie.
+  useEffect(() => {
+    if (!tourneeEnAttente || !isHost || tourneeReste > 0) return;
+    const marque = game.tourneePending + ":" + (game.mene?.num ?? 0);
+    if (tourneeExpRef.current === marque) return;
+    tourneeExpRef.current = marque;
+    offrirTournee(null, game.tourneePending);
   });
 
   // Une équipe qui n'a que des bots offre sa tournée toute seule, sinon
@@ -2094,7 +2106,7 @@ export default function Petanque() {
   // L'angle du glissé donne la direction, sa longueur la force. Le geste
   // ne produit qu'un couple (angle, force) remis à throwBoule : la chaîne
   // déterministe qui suit est la même qu'avec les curseurs.
-  const peutLancer = myTurn && !animating && !gel;
+  const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente;
 
   const basculerCurseurs = v => {
     setCurseurs(v);
@@ -2304,6 +2316,7 @@ export default function Petanque() {
   // la ligne de jeu — mène, joueur au tour, chronomètre — avec les outils.
   const nomCourt = t => TEAM_NAMES[t].replace("Équipe ", "").toUpperCase();
   const ligneTour = game.phase !== "playing" ? "Partie terminée"
+    : tourneeEnAttente ? `${nomCourt(game.tourneePending)} choisit…`
     : gel && !gel.commit ? "résultat du lancer…"
     : myTurn ? "À toi !"
     : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"}`;
@@ -2344,7 +2357,10 @@ export default function Petanque() {
       <div style={S.tableauBas}>
         {game.mene && <span style={S.tableauMene}>M{game.mene.num}</span>}
         <span style={S.tableauTour}>{ligneTour}</span>
-        {game.phase === "playing" && !animating && !gel && (
+        {game.phase === "playing" && tourneeEnAttente && (
+          <span style={S.tableauChrono}>{tourneeReste}</span>
+        )}
+        {game.phase === "playing" && !tourneeEnAttente && !animating && !gel && (
           <span style={{ ...S.tableauChrono, color: resteTemps <= 5 ? "#ff7a5c" : "#ffd23f" }}>{resteTemps}</span>
         )}
         {outils(true)}
@@ -2367,13 +2383,19 @@ export default function Petanque() {
         </div>
       )}
       {tableauAffichage}
-      {game.tourneePending && me && game.tourneePending === me.team && game.phase === "playing" && (
-        <div style={S.tourneeBar}>
-          <span style={S.tourneeQ}>Mène gagnée ! La tournée est pour…</span>
-          {activeTeams(game).filter(t => t !== me.team).map(t => (
-            <button key={t} style={{ ...S.tourneeBtn, borderColor: TEAM_COLORS[t] }} onClick={() => offrirTournee(t)}>{TEAM_NAMES[t]}</button>
-          ))}
-          <button style={S.tourneeBtn} onClick={() => offrirTournee(null)}>Passer</button>
+      {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
+        <div style={S.tourneeOverlay}>
+          <div style={S.tourneeCarte}>
+            <div style={S.verre}>🍹</div>
+            <h2 style={S.aideTitre}>Mène gagnée !</h2>
+            <p style={S.tourneeQuestion}>À qui offrez-vous la tournée ?</p>
+            {activeTeams(game).filter(t => t !== me.team).map(t => (
+              <button key={t} style={{ ...S.btn, marginTop: 0, background: TEAM_COLORS[t], color: "#fff" }}
+                      onClick={() => offrirTournee(t)}>{TEAM_NAMES[t]}</button>
+            ))}
+            <button style={S.btnGhost} onClick={() => offrirTournee(null)}>Passer</button>
+            <p style={S.hint}>Sans réponse, la tournée passe dans {tourneeReste} s.</p>
+          </div>
         </div>
       )}
       {!me && game.phase !== "finished" && (
@@ -2427,7 +2449,7 @@ export default function Petanque() {
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
           </div>
-          {myTurn && !animating && !gel && (curseurs || !cochToThrow) && (
+          {peutLancer && (curseurs || !cochToThrow) && (
             <div style={S.card}>
               {!cochToThrow && (
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -2560,7 +2582,7 @@ const styles = {
     borderTop: "1px solid #2f3724", fontSize: 13, minHeight: 36,
   },
   tableauMene: { opacity: 0.55, fontSize: 11, fontWeight: 700, letterSpacing: 1 },
-  tableauTour: { flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  tableauTour: { flex: 1, fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   tableauChrono: {
     fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 20, fontWeight: 700,
     minWidth: 30, textAlign: "right", textShadow: "0 0 8px rgba(255,210,63,0.6)",
@@ -2609,6 +2631,12 @@ const styles = {
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18,
   },
   tourneeGlasses: { display: "flex", gap: 14 },
+  tourneeCarte: {
+    background: "#333b28", border: "1px solid #4a5438", borderRadius: 12, padding: 18,
+    width: "100%", maxWidth: 340, boxSizing: "border-box", display: "flex",
+    flexDirection: "column", gap: 10, alignItems: "stretch", textAlign: "center",
+  },
+  tourneeQuestion: { fontSize: 15, margin: 0 },
   verre: { fontSize: 52 },
   tourneeTxt: {
     fontFamily: "Georgia, serif", fontSize: 19, color: "#f6c324",
