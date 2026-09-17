@@ -14,11 +14,11 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 
 | # | Item | Détail | Effort | Dépend de |
 |---|------|--------|--------|-----------|
-| G1 | **Marche graphique 1** 🎨 | Fond photo de place de village, **design du sable** (traces persistantes des boules, impacts de tir, grain, lumière chaude), boules métalliques à reflets, ombres — détail complet : ANALYSE-CONCURRENTIELLE.md §6. Marches 2 (pseudo-3D) et 3 (three.js) en réserve selon les tests | M | — |
+| G1 | **Marche graphique 1** 🎨 | ~~Décor de place de village, design du sable (traces persistantes, impacts de tir, grain, lumière chaude), boules métalliques à reflets, ombres~~ ✅ Fait — reste à déposer une vraie photo `decor.jpg` (panoramique ~5:1) si on en veut une. Marches 2 (pseudo-3D) et 3 (three.js) en réserve selon les tests | M | — |
 | 1 | **Fichiers audio** | ~~Déposer `cigales.mp3` et `musique.mp3` à la racine du dépôt~~ ✅ Fait | S | Flavio |
-| 2 | **Bot : cerveau** | Le bot simule des lancers candidats avec la vraie physique et choisit le meilleur, bruité selon son niveau | M | — |
-| 3 | **Bot : niveaux** | 3 difficultés (ex. *Fanny* / *Pointeur* / *Marius le Fada*), du très maladroit au chirurgical | S | 2 |
-| 4 | **Bot : au salon** | L'hôte ajoute un bot dans n'importe quelle équipe ; jouable 100 % solo | S | 2 |
+| 2 | **Bot : cerveau** | ~~Le bot simule des lancers candidats avec la vraie physique et choisit le meilleur, bruité selon son niveau~~ ✅ Fait | M | — |
+| 3 | **Bot : niveaux** | ~~3 difficultés~~ ✅ Fait : *Fanny* / *Pointeur* / *Fada*, du très maladroit au chirurgical | S | 2 |
+| 4 | **Bot : au salon** | ~~L'hôte ajoute un bot dans n'importe quelle équipe ; jouable 100 % solo~~ ✅ Fait (les équipes de bots offrent même leur tournée) | S | 2 |
 | 5 | **Bot remplaçant** | Après 3 timeouts consécutifs d'un joueur, proposition de le remplacer par un bot | S | 2 |
 | 6 | **Écran d'aide** | Règles + commandes en une page (les nouveaux arrivent sans rien connaître) | S | — |
 | 7 | **Reprise de partie** | Rejoindre en cours de partie proprement (aujourd'hui : spectateur seulement) | M | — |

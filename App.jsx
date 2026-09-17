@@ -188,6 +188,119 @@ export function stepPhysics(bodies, T) {
   return moving;
 }
 
+// ---------- Le bot ------------------------------------------------
+// Il joue comme un joueur : il essaie des lancers dans sa tête avec la
+// vraie physique, garde le meilleur, puis tremble selon son niveau. Tout
+// se passe sur l'appareil qui l'héberge ; le lancer part ensuite par le
+// chemin normal, si bien que les autres appareils le rejouent sans rien
+// savoir de sa réflexion.
+
+const NIVEAUX_BOT = {
+  fanny:    { nom: "Fanny",   sous: "débutante",  grille: 4, affine: 0, bruitA: 0.45, bruitF: 22, tire: false },
+  pointeur: { nom: "Pointeur", sous: "correct",   grille: 6, affine: 1, bruitA: 0.14, bruitF: 8,  tire: true },
+  fada:     { nom: "Fada",    sous: "chirurgical", grille: 8, affine: 2, bruitA: 0.03, bruitF: 2,  tire: true },
+};
+const ORDRE_BOTS = ["fanny", "pointeur", "fada"];
+// De quoi baptiser les bots sans jamais tomber deux fois sur le même
+const PRENOMS_BOT = ["Marius", "Panisse", "César", "Escartefigue", "Honorine",
+                     "Titin", "Félicie", "Gervais", "Ugolin"];
+
+// Rejoue un lancer dans le vide : mêmes corps, même physique, mais rien
+// n'est affiché ni enregistré.
+export function simulerCoup(st, T, team, angle, power, mode) {
+  const bodies = makeBodies(st);
+  const DEP = departDe(T);
+  const rad = (angle * Math.PI) / 180;
+  if (!st.mene.cochonnet) {
+    const v = T.vPoint(power);
+    bodies.push({ x: DEP.x, y: DEP.y, r: R_COCH, mass: 0.35, kind: "coch",
+                  vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v });
+  } else if (mode === "tir") {
+    bodies.push({ x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", tir: true, team,
+                  mu: T.muTir, air: T.airTir(power),
+                  vx: Math.sin(rad) * T.vTir, vy: -Math.cos(rad) * T.vTir });
+  } else {
+    const v = T.vPoint(power);
+    bodies.push({ x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", team,
+                  vx: Math.sin(rad) * v, vy: -Math.cos(rad) * v });
+  }
+  let n = 0;
+  while (stepPhysics(bodies, T) && n++ < 900) {}
+  return bodies;
+}
+
+// Ce que vaut un tapis de boules pour l'équipe qui vient de jouer
+function noterTapis(bodies, T, team) {
+  const coch = bodies.find(b => b.kind === "coch");
+  if (!coch) return -1e9;
+  const ech = T.L / 520; // un grand terrain, de grandes distances
+  const d = b => dist(b, coch) / ech;
+  const vivantes = bodies.filter(b => b.kind === "boule" && !b.dead);
+  const nous = vivantes.filter(b => b.team === team);
+  const eux = vivantes.filter(b => b.team !== team);
+  const dNous = nous.length ? Math.min(...nous.map(d)) : 1e4;
+  const dEux = eux.length ? Math.min(...eux.map(d)) : 1e4;
+  const pour = nous.filter(b => d(b) < dEux).length;   // boules qui marquent
+  const contre = eux.filter(b => d(b) < dNous).length; // boules encaissées
+  return (pour - contre) * 60 - Math.min(dNous, 300) * 0.9 + Math.min(dEux, 300) * 0.35;
+}
+
+// Ouvrir la mène : ni trop court (à refaire), ni au fond, ni sur le bord
+function noterCochonnet(bodies, T) {
+  const coch = bodies.find(b => b.kind === "coch");
+  const DEP = departDe(T);
+  const d = Math.hypot(coch.x - DEP.x, coch.y - DEP.y);
+  const ech = T.L / 520;
+  if (d < T.cochMin * 1.03) return -1e4 + d; // lancer nul, on recommence
+  const cible = Math.min((T.L - 30) * 0.86, T.cochMin * 1.5);
+  return -Math.abs(d - cible) / ech - (Math.abs(coch.x - T.W / 2) / ech) * 0.4;
+}
+
+// Le coup que le bot va tenter : le meilleur qu'il ait trouvé, puis le
+// tremblement de sa main.
+export function coupDuBot(st, T, joueur) {
+  const niv = NIVEAUX_BOT[joueur.niveau] || NIVEAUX_BOT.pointeur;
+  const ouvre = !st.mene.cochonnet;
+  const noter = ouvre
+    ? bodies => noterCochonnet(bodies, T)
+    : bodies => noterTapis(bodies, T, joueur.team);
+  const modes = ouvre || !niv.tire || !st.mene.boules.some(b => b.team !== joueur.team)
+    ? ["point"] : ["point", "tir"];
+  const A = T.angleMax;
+  // Le grand terrain simule huit sous-pas par image : on y cherche moins
+  // large, sinon le bot fige l'appareil le temps de réfléchir.
+  const g = T.camera ? Math.max(4, niv.grille - 3) : niv.grille;
+  const affine = T.camera ? Math.min(1, niv.affine) : niv.affine;
+  let best = null;
+  const essayer = (angle, power, mode) => {
+    const a = Math.max(-A, Math.min(A, angle));
+    const p = Math.max(25, Math.min(100, power));
+    const note = noter(simulerCoup(st, T, joueur.team, a, p, mode));
+    if (!best || note > best.note) best = { angle: a, power: p, mode, note };
+  };
+  for (const mode of modes) {
+    for (let i = 0; i < g; i++) {
+      for (let j = 0; j < g; j++) {
+        essayer(-A + (2 * A * i) / (g - 1), 25 + (75 * j) / (g - 1), mode);
+      }
+    }
+  }
+  // puis on resserre autour du meilleur essai
+  let pasA = (2 * A) / (g - 1), pasP = 75 / (g - 1);
+  for (let k = 0; k < affine; k++) {
+    pasA /= 2; pasP /= 2;
+    const b = best;
+    for (const da of [-1, 0, 1]) for (const dp of [-1, 0, 1]) {
+      if (da || dp) essayer(b.angle + da * pasA, b.power + dp * pasP, b.mode);
+    }
+  }
+  return {
+    angle: Math.round(best.angle + (Math.random() - 0.5) * 2 * niv.bruitA * A),
+    power: Math.round(best.power + (Math.random() - 0.5) * 2 * niv.bruitF),
+    mode: best.mode,
+  };
+}
+
 // ---------- Ambiance sonore ---------------------------------------
 
 let audioCtx = null;
@@ -1215,12 +1328,15 @@ export default function Petanque() {
   const [animating, setAnimating] = useState(false);
   const [, setTic] = useState(0); // horloge du compte à rebours
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
+  const [niveauBot, setNiveauBot] = useState("pointeur");
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
   const meIdRef = useRef(null);
   const seenTourneeRef = useRef(0);
   const autoLancerRef = useRef(""); // évite de déclencher deux fois le lancer du timer
+  const botRef = useRef("");        // idem pour le coup d'un bot
+  const tourneeBotRef = useRef(""); // ... et pour sa tournée
   gameRef.current = game;
 
   const me = game?.players.find(p => p.id === meId) || null;
@@ -1407,6 +1523,47 @@ export default function Petanque() {
     }
   });
 
+  // --- les bots ---------------------------------------------------
+  // Un bot n'a pas d'appareil : le premier joueur humain de la liste joue
+  // pour lui. Un seul appareil s'en charge, les autres reçoivent le coup
+  // par le chemin habituel et le rejouent.
+  const jeSuisLeMeneur = !!game && game.players.filter(p => !p.bot)[0]?.id === meId;
+
+  useEffect(() => {
+    if (!game || game.phase !== "playing" || animating || !turnId || !jeSuisLeMeneur) return;
+    const lui = game.players.find(p => p.id === turnId);
+    if (!lui || !lui.bot) return;
+    // Une tournée en attente chez une équipe de bots se règle d'abord :
+    // sinon le coup suivant, parti d'une copie plus ancienne, l'effacerait.
+    if (game.tourneePending && !game.players.some(p => p.team === game.tourneePending && !p.bot)) return;
+    const marque = turnId + ":" + (game.rev || 0);
+    if (botRef.current === marque) return;
+    botRef.current = marque;
+    setNotice(`${lui.name} étudie le terrain…`);
+    setTimeout(() => {
+      const g = gameRef.current;
+      if (!g || g.phase !== "playing" || animatingRef.current || nextToPlay(g) !== turnId) return;
+      const coup = coupDuBot(g, terrainDe(g), lui); // il essaie ses lancers dans sa tête
+      throwBoule(turnId, coup.angle, coup.power, coup.mode);
+    }, 1200);
+  });
+
+  // Une équipe qui n'a que des bots offre sa tournée toute seule, sinon
+  // personne ne boirait jamais dans une partie en solo.
+  useEffect(() => {
+    if (!game || game.phase !== "playing" || !game.tourneePending || !jeSuisLeMeneur) return;
+    const t = game.tourneePending;
+    if (game.players.some(p => p.team === t && !p.bot)) return; // un humain décide
+    const marque = "t" + t + ":" + (game.mene?.num ?? 0);
+    if (tourneeBotRef.current === marque) return;
+    tourneeBotRef.current = marque;
+    const autres = activeTeams(game).filter(x => x !== t);
+    setTimeout(() => {
+      if (!autres.length) return;
+      offrirTournee(autres[Math.floor(Math.random() * autres.length)], t);
+    }, 700);
+  });
+
   // --- dessin -----------------------------------------------------
   useEffect(() => {
     const cv = canvasRef.current;
@@ -1466,6 +1623,18 @@ export default function Petanque() {
     if (p) p.team = t;
   });
 
+  const ajouterBot = t => mutate(g => {
+    if (g.players.length >= 9 || g.players.filter(p => p.team === t).length >= 3) return;
+    const pris = new Set(g.players.map(p => p.name));
+    const prenom = PRENOMS_BOT.find(n => !pris.has(n)) || "Bot " + (g.players.length + 1);
+    g.players.push({
+      id: "b" + Date.now() + Math.floor(Math.random() * 1000),
+      name: prenom, team: t, bot: true, niveau: niveauBot,
+    });
+  });
+
+  const retirerBot = id => mutate(g => { g.players = g.players.filter(p => p.id !== id); });
+
   const setBoules = n => mutate(g => { g.boulesEach = n; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
 
@@ -1486,13 +1655,14 @@ export default function Petanque() {
 
   // Après une mène gagnée, n'importe quel joueur de l'équipe gagnante
   // peut offrir la tournée : le premier qui clique décide
-  const offrirTournee = (cible) => mutate(g => {
-    if (!me || g.tourneePending !== me.team) return; // déjà réglée par un coéquipier
+  const offrirTournee = (cible, deLaPart) => mutate(g => {
+    const from = deLaPart || me?.team;
+    if (!from || g.tourneePending !== from) return; // déjà réglée par un coéquipier
     g.tourneePending = null;
     if (cible) {
       g.drinks = g.drinks || { A: 0, B: 0, C: 0 };
       g.drinks[cible] = (g.drinks[cible] || 0) + 1;
-      g.lastTournee = { from: me.team, to: cible, id: Date.now() };
+      g.lastTournee = { from, to: cible, id: Date.now() };
     }
   });
 
@@ -1583,6 +1753,7 @@ export default function Petanque() {
     if (wasCochThrow && Math.hypot(coch.x - DEP.x, coch.y - DEP.y) < Ts.cochMin) {
       setAnimating(false);
       randomizeAim();
+      botRef.current = ""; // un bot doit pouvoir le relancer
       setNotice("Cochonnet trop court — relance-le !");
       return;
     }
@@ -1697,13 +1868,24 @@ export default function Petanque() {
             <div style={S.teamHead}>
               <span style={{ ...S.dot, background: TEAM_COLORS[t] }} />
               <strong>{TEAM_NAMES[t]}</strong>
-              {me && me.team !== t && game.players.filter(p => p.team === t).length < 3 && (
-                <button style={S.miniBtn} onClick={() => pickTeam(t)}>Me placer ici</button>
-              )}
+              <div style={S.teamActions}>
+                {me && me.team !== t && game.players.filter(p => p.team === t).length < 3 && (
+                  <button style={S.miniBtn} onClick={() => pickTeam(t)}>Me placer ici</button>
+                )}
+                {isHost && game.players.length < 9 && game.players.filter(p => p.team === t).length < 3 && (
+                  <button style={S.miniBtn} onClick={() => ajouterBot(t)}>+ 🤖</button>
+                )}
+              </div>
             </div>
             <div style={S.names}>
               {game.players.filter(p => p.team === t).map(p => (
-                <span key={p.id} style={S.nameTag}>{p.name}{p.id === meId ? " (toi)" : ""}</span>
+                <span key={p.id} style={S.nameTag}>
+                  {p.bot ? "🤖 " : ""}{p.name}{p.id === meId ? " (toi)" : ""}
+                  {p.bot && <span style={S.nivTag}>{NIVEAUX_BOT[p.niveau]?.nom ?? ""}</span>}
+                  {p.bot && isHost && (
+                    <button style={S.retirerBtn} onClick={() => retirerBot(p.id)} title="Retirer">×</button>
+                  )}
+                </span>
               ))}
             </div>
           </div>
@@ -1716,6 +1898,14 @@ export default function Petanque() {
                 <button key={n} style={game.boulesEach === n ? S.btnSmallOn : S.btnSmall} onClick={() => setBoules(n)}>{n}</button>
               ))}
             </div>
+            <label style={S.label}>Niveau des bots ajoutés</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {ORDRE_BOTS.map(k => (
+                <button key={k} style={niveauBot === k ? S.btnSmallOn : S.btnSmall}
+                        onClick={() => setNiveauBot(k)}>{NIVEAUX_BOT[k].nom}</button>
+              ))}
+            </div>
+            <p style={S.hint}>{NIVEAUX_BOT[niveauBot].nom} : {NIVEAUX_BOT[niveauBot].sous}. Un bot joue tout seul, tu peux remplir les équipes et jouer en solo.</p>
             <label style={S.label}>Terrain</label>
             <p style={S.hint}>Équipes inégales ? Le total de boules par équipe est équilibré automatiquement.</p>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1792,7 +1982,7 @@ export default function Petanque() {
           <p style={S.turn}>
             {myTurn
               ? `À toi de jouer, ${me?.name} ! (${game.mene.left[meId]} boule${game.mene.left[meId] > 1 ? "s" : ""}) — ⏱ ${resteTemps} s`
-              : `Mène ${game.mene.num} — au tour de ${turnPlayer?.name ?? "…"} (${TEAM_NAMES[turnPlayer?.team] ?? ""}) — ⏱ ${resteTemps} s`}
+              : `Mène ${game.mene.num} — au tour de ${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"} (${TEAM_NAMES[turnPlayer?.team] ?? ""}) — ⏱ ${resteTemps} s`}
           </p>
           <p style={S.pointLive}>
             {pointLive ? `${TEAM_NAMES[pointLive.team]} tient le point (+${pointLive.pts})` : "Personne ne tient encore le point."}
@@ -1889,7 +2079,7 @@ const styles = {
     background: "#f6c324", color: "#26200c", fontSize: 15, fontWeight: 600, cursor: "pointer",
   },
   miniBtn: {
-    marginLeft: "auto", padding: "4px 10px", borderRadius: 6, border: "1px solid #4a5438",
+    padding: "4px 10px", borderRadius: 6, border: "1px solid #4a5438",
     background: "transparent", color: "#f2eddd", fontSize: 12, cursor: "pointer",
   },
   sndBtn: {
@@ -1918,7 +2108,14 @@ const styles = {
   names: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 },
   nameTag: {
     fontSize: 13, background: "#242a1a", borderRadius: 6, padding: "4px 8px",
+    display: "inline-flex", alignItems: "center", gap: 6,
   },
+  nivTag: { fontSize: 10, opacity: 0.6 },
+  retirerBtn: {
+    border: "none", background: "transparent", color: "#f0b23e",
+    fontSize: 15, lineHeight: 1, padding: 0, cursor: "pointer",
+  },
+  teamActions: { marginLeft: "auto", display: "flex", gap: 6 },
   turn: { fontSize: 14, fontWeight: 600, margin: 0, textAlign: "center" },
   pointLive: { fontSize: 12, opacity: 0.85, margin: 0, textAlign: "center" },
   banner: {
