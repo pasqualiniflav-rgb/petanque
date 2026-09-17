@@ -43,6 +43,22 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | D13 | **Cochonnet** | ~~Calibration propre, un peu plus vif que les boules~~ ✅ 40 % en vol, +10 % de portée à force égale (constantes volCoch / cochVif par terrain, couvertes par le banc) | ✅ |
 | D14 | **Fin de partie** | ~~Bonus : confettis, cochonnet doré, rappel de la Fanny~~ ✅ Confettis aux couleurs des équipes, cochonnet d'or, tampon FANNY ! et sa phrase (variante sobre en mode sans tournée) | ✅ |
 
+## 🎨 Sprint polish — direction artistique (DESIGN.md)
+
+| # | Item | État |
+|---|------|------|
+| A1 | Polices Alfa Slab One + Oswald auto-hébergées (`/fonts`, woff2, @font-face, sans CDN) | ✅ |
+| A2 | Set d'icônes SVG inline trait 2 px (haut-parleur, note, aide, maison, rejouer, dé, partage, robot, verre, engrenage, croix, horloge) ; plus aucun émoji dans l'interface | ✅ |
+| B3 | Fronton façon boulodrome : cadre bleu nuit émaillé, chiffres Oswald lumineux, compteur central « MÈNE N » + chrono, boules et verres en icônes | ✅ |
+| B4 | Terrain pleine largeur sous cadre bois, décor de village conservé tel quel | ✅ |
+| B5 | Bandeaux « ardoise » opaques collés en haut/bas du terrain ; rappels de geste effacés après les deux premiers lancers | ✅ |
+| B6 | Boutons POINTER/TIRER imprimés, rangée d'icônes normalisée (maison, rejouer) | ✅ |
+| B7 | Visée = direction seule (pleine / pointillée), boule tirée grossie + ombre détachée + traînée ; carreau resserré sur le classique (`muTir` 0,88 → 0,76 : 60 → 35 px de geste, banc `tests/carreau.js`) | ✅ |
+| C8 | Accueil : enseigne « PÉTANQUE ! », accroche, plaque émaillée, « Nom de joueur », rien sous les icônes | ✅ |
+| C9 | Salon : plaques et boutons à la charte, note d'équilibrage sous « Boules par joueur », bots en une ligne, puces avec robot SVG | ✅ |
+| C10 | Pop-in tournée : plaque à double liseré, verre dessiné, « PASSER · N » | ✅ |
+| C11 | Victoire : plaque crème contrastée, trophée dessiné, confettis conservés | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
