@@ -2138,7 +2138,7 @@ export default function Petanque() {
 
   const boutonsSon = (
     <>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 6 }}>
         <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
         <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
         <button style={S.sndBtn} onClick={() => setAide(true)} title="Règles du jeu">?</button>
@@ -2263,6 +2263,47 @@ export default function Petanque() {
   const pointLive = game.phase === "playing" && game.mene && game.mene.cochonnet && game.mene.boules.length
     ? scoreMene(game) : null;
 
+  // Le fronton du boulodrome : une colonne par équipe (score en chiffres
+  // lumineux, boules restantes, tournées, qui tient le point), et dessous
+  // la ligne de jeu — mène, joueur au tour, chronomètre — avec les outils.
+  const nomCourt = t => TEAM_NAMES[t].replace("Équipe ", "").toUpperCase();
+  const ligneTour = game.phase !== "playing" ? "Partie terminée"
+    : gel && !gel.commit ? "résultat du lancer…"
+    : myTurn ? `À toi, ${me?.name} !`
+    : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"} joue`;
+  const tableauAffichage = (
+    <div style={S.tableau}>
+      <div style={S.tableauCols}>
+        {activeTeams(game).map(t => {
+          const auTour = game.phase === "playing" && turnPlayer?.team === t;
+          const tient = pointLive && pointLive.team === t;
+          return (
+            <div key={t} style={{ ...S.tableauCol, borderTopColor: TEAM_COLORS[t],
+                                  background: auTour ? "rgba(255,255,255,0.07)" : "transparent" }}>
+              <div style={S.tableauNom}>
+                <span style={{ ...S.dot, width: 8, height: 8, background: TEAM_COLORS[t] }} />{nomCourt(t)}
+              </div>
+              <div style={S.tableauScore}>{String(game.scores[t] || 0).padStart(2, "0")}</div>
+              <div style={S.tableauInfo}>
+                {game.mene && <span>●{restantes(t)}</span>}
+                {(game.drinks?.[t] || 0) > 0 && <span>🍹{game.drinks[t]}</span>}
+                {tient && <span style={S.tableauPoint}>+{pointLive.pts}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={S.tableauBas}>
+        {game.mene && <span style={S.tableauMene}>M{game.mene.num}</span>}
+        <span style={S.tableauTour}>{ligneTour}</span>
+        {game.phase === "playing" && !animating && !gel && (
+          <span style={{ ...S.tableauChrono, color: resteTemps <= 5 ? "#ff7a5c" : "#ffd23f" }}>{resteTemps}</span>
+        )}
+        {boutonsSon}
+      </div>
+    </div>
+  );
+
   return (
     <div style={S.pageGame}>
       <style>{CSS_IVRESSE}</style>
@@ -2276,10 +2317,7 @@ export default function Petanque() {
           <p style={{ ...S.tourneeTxt, animation: "trinquer .8s .55s both" }}>{tourneeAnim}</p>
         </div>
       )}
-      <div style={S.scoreRow}>
-        {activeTeams(game).map(teamChip)}
-        {boutonsSon}
-      </div>
+      {tableauAffichage}
       {game.tourneePending && me && game.tourneePending === me.team && game.phase === "playing" && (
         <div style={S.tourneeBar}>
           <span style={S.tourneeQ}>Mène gagnée ! La tournée est pour…</span>
@@ -2337,16 +2375,6 @@ export default function Petanque() {
         </div>
       ) : (
         <>
-          <p style={S.turn}>
-            {gel && !gel.commit
-              ? "On attend le résultat du lancer…"
-              : myTurn
-              ? `À toi de jouer, ${me?.name} ! (${game.mene.left[meId]} boule${game.mene.left[meId] > 1 ? "s" : ""}) — ⏱ ${resteTemps} s`
-              : `Mène ${game.mene.num} — au tour de ${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"} (${TEAM_NAMES[turnPlayer?.team] ?? ""}) — ⏱ ${resteTemps} s`}
-          </p>
-          <p style={S.pointLive}>
-            {pointLive ? `${TEAM_NAMES[pointLive.team]} tient le point (+${pointLive.pts})` : "Personne ne tient encore le point."}
-          </p>
           <div style={{
             ...S.canvasWrap,
             ...(ivresseNiveau ? {
@@ -2457,7 +2485,7 @@ const styles = {
     background: "transparent", color: "#f2eddd", fontSize: 12, cursor: "pointer",
   },
   sndBtn: {
-    width: 38, borderRadius: 8, border: "1px solid #4a5438",
+    width: 40, height: 36, borderRadius: 8, border: "1px solid #4a5438", padding: 0,
     background: "#333b28", color: "#f2eddd", fontSize: 15, cursor: "pointer", flexShrink: 0,
   },
   hint: { fontSize: 12, opacity: 0.65, lineHeight: 1.45, margin: 0 },
@@ -2468,6 +2496,43 @@ const styles = {
     userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
   scoreRow: { display: "flex", gap: 8, width: "100%", maxWidth: 360 },
+  tableau: {
+    width: "100%", maxWidth: 380, boxSizing: "border-box",
+    background: "linear-gradient(180deg, #1c2114 0%, #141810 100%)",
+    border: "1px solid #3d462e", borderRadius: 10, padding: "6px 8px 5px",
+    boxShadow: "inset 0 0 22px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3)",
+  },
+  tableauCols: { display: "flex", gap: 6, alignItems: "stretch" },
+  tableauCol: {
+    flex: 1, minWidth: 0, borderTop: "3px solid", borderRadius: 4,
+    padding: "3px 4px 2px", textAlign: "center",
+  },
+  tableauNom: {
+    fontSize: 10, letterSpacing: 1.2, opacity: 0.8, whiteSpace: "nowrap",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+  },
+  tableauScore: {
+    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 30, fontWeight: 700,
+    lineHeight: 1.05, letterSpacing: 2, color: "#ffd23f",
+    textShadow: "0 0 10px rgba(255,210,63,0.75), 0 0 2px rgba(255,210,63,0.9)",
+  },
+  tableauInfo: {
+    fontSize: 11, minHeight: 15, display: "flex", justifyContent: "center", gap: 6,
+    color: "#f2eddd", opacity: 0.92, whiteSpace: "nowrap",
+  },
+  tableauPoint: {
+    background: "#f6c324", color: "#26200c", borderRadius: 4, padding: "0 4px", fontWeight: 700,
+  },
+  tableauBas: {
+    display: "flex", alignItems: "center", gap: 8, marginTop: 5, paddingTop: 5,
+    borderTop: "1px solid #2f3724", fontSize: 13, minHeight: 36,
+  },
+  tableauMene: { opacity: 0.55, fontSize: 11, fontWeight: 700, letterSpacing: 1 },
+  tableauTour: { flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  tableauChrono: {
+    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 20, fontWeight: 700,
+    minWidth: 30, textAlign: "right", textShadow: "0 0 8px rgba(255,210,63,0.6)",
+  },
   chip: {
     flex: 1, display: "flex", alignItems: "center", gap: 4,
     border: "1.5px solid", borderRadius: 8, padding: "6px 6px",
