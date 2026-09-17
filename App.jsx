@@ -489,6 +489,7 @@ function normalize(st) {
   st.drinks = st.drinks || { A: 0, B: 0, C: 0 };
   st.tourneePending = st.tourneePending || null;
   st.absents = st.absents || {}; // lancers manqués d'affilée, par joueur
+  st.sansTournee = !!st.sansTournee; // option de l'hôte : ni tournées ni ivresse
   st.lastTournee = st.lastTournee || null;
   st.streak = st.streak || null;
   st.terrain = st.terrain || "classique";
@@ -1914,6 +1915,7 @@ export default function Petanque() {
   });
 
   const setBoules = n => mutate(g => { g.boulesEach = n; });
+  const setSansTournee = v => mutate(g => { g.sansTournee = !!v; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
 
   async function start() {
@@ -2072,10 +2074,12 @@ export default function Petanque() {
           st.phase = "finished"; st.winner = res.team;
         } else {
           newMene(st, res.team, st.mene.num + 1);
-          st.tourneePending = res.team; // la mène gagnée ouvre droit à une tournée
-          if (st.streak.count % 3 === 0) { // 3 d'affilée : les vainqueurs trinquent aussi
-            st.drinks[res.team] = (st.drinks[res.team] || 0) + 1;
-            st.lastTournee = { to: res.team, surprise: true, id: Date.now() };
+          if (!st.sansTournee) {
+            st.tourneePending = res.team; // la mène gagnée ouvre droit à une tournée
+            if (st.streak.count % 3 === 0) { // 3 d'affilée : les vainqueurs trinquent aussi
+              st.drinks[res.team] = (st.drinks[res.team] || 0) + 1;
+              st.lastTournee = { to: res.team, surprise: true, id: Date.now() };
+            }
           }
         }
       } else {
@@ -2280,6 +2284,14 @@ export default function Petanque() {
               ))}
             </div>
             <p style={S.hint}>{NIVEAUX_BOT[niveauBot].nom} : {NIVEAUX_BOT[niveauBot].sous}. Un bot joue tout seul, tu peux remplir les équipes et jouer en solo.</p>
+            <label style={S.label}>Tournées de pastis</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={!game.sansTournee ? S.btnSmallOn : S.btnSmall} onClick={() => setSansTournee(false)}>🍹 Avec</button>
+              <button style={game.sansTournee ? S.btnSmallOn : S.btnSmall} onClick={() => setSansTournee(true)}>Sans</button>
+            </div>
+            <p style={S.hint}>{game.sansTournee
+              ? "Partie sobre : ni tournée après une mène gagnée, ni ivresse. Le vin d'honneur reste à votre charge."
+              : "L'équipe qui gagne une mène offre une tournée ; chaque verre trouble un peu plus la vue."}</p>
             <label style={S.label}>Terrain</label>
             <p style={S.hint}>Équipes inégales ? Le total de boules par équipe est équilibré automatiquement.</p>
             <div style={{ display: "flex", gap: 8 }}>
@@ -2292,7 +2304,7 @@ export default function Petanque() {
         )}
         {!isHost && (
           <p style={S.hint}>
-            Terrain : {terrainDe(game).nom}. En attente que l'hôte ({meneur?.name}) lance la partie…
+            Terrain : {terrainDe(game).nom}{game.sansTournee ? ", sans tournée" : ""}. En attente que l'hôte ({meneur?.name}) lance la partie…
           </p>
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -2432,7 +2444,7 @@ export default function Petanque() {
           <h1 style={S.h1}>{TEAM_NAMES[game.winner]} gagne !</h1>
           <p style={S.sub}>Score final : {activeTeams(game).map(t => `${TEAM_NAMES[t]} ${game.scores[t]}`).join(" — ")}</p>
           {activeTeams(game).filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
-            <p key={t} style={S.sub}>{TEAM_NAMES[t]} est Fanny ! La tournée de pastis est pour eux.</p>
+            <p key={t} style={S.sub}>{TEAM_NAMES[t]} est Fanny !{game.sansTournee ? "" : " La tournée de pastis est pour eux."}</p>
           ))}
           {isHost && <button style={S.btn} onClick={resetGame}>Nouvelle partie</button>}
         </div>

@@ -37,7 +37,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C7 | **Chronomètre** | ~~15 → 20 s~~ ✅ (24 s de grâce avant qu'un autre appareil ne lance pour un absent) | ✅ |
 | C8 | **Tournée** | ~~Popin bloquante pour l'équipe gagnante, expiration 20 s → Passer~~ ✅ La mène suivante attend le choix (joueurs, bots et chrono bloqués) ; l'hôte passe à 20 s ; testé : choix, Passer, expiration | ✅ |
 | C9 | **Ivresse** | ~~Plus d'aléa sur le geste ; effets visuels et sonores conservés~~ ✅ Tangage, flou, vision double et son ralenti gardés ; la main ne tremble plus | ✅ |
-| C10 | **Mode sans tournée** | Option de l'hôte, préfigure la version tous publics | ⬜ |
+| C10 | **Mode sans tournée** | ~~Option de l'hôte, préfigure la version tous publics~~ ✅ Réglage « Tournées de pastis : Avec / Sans » au salon ; sans : ni popin, ni verre surprise, ni ivresse | ✅ |
 | C11 | **Accès** | 🎲 prénom provençal, code auto, « Partager le lien » (?partie=CODE) | ⬜ |
 | D12 | **Pointé avec portée** | La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques | ⬜ |
 | D13 | **Cochonnet** | Calibration propre, un peu plus vif que les boules | ⬜ |
