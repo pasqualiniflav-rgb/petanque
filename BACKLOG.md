@@ -36,7 +36,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C6 | **Sons** | ~~Plus de démarrage automatique : 🦗 et 🎵 seuls déclencheurs~~ ✅ | ✅ |
 | C7 | **Chronomètre** | ~~15 → 20 s~~ ✅ (24 s de grâce avant qu'un autre appareil ne lance pour un absent) | ✅ |
 | C8 | **Tournée** | Popin bloquante pour l'équipe gagnante, expiration 20 s → Passer | ⬜ |
-| C9 | **Ivresse** | Plus d'aléa sur le geste ; effets visuels et sonores conservés | ⬜ |
+| C9 | **Ivresse** | ~~Plus d'aléa sur le geste ; effets visuels et sonores conservés~~ ✅ Tangage, flou, vision double et son ralenti gardés ; la main ne tremble plus | ✅ |
 | C10 | **Mode sans tournée** | Option de l'hôte, préfigure la version tous publics | ⬜ |
 | C11 | **Accès** | 🎲 prénom provençal, code auto, « Partager le lien » (?partie=CODE) | ⬜ |
 | D12 | **Pointé avec portée** | La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques | ⬜ |

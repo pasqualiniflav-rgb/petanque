@@ -1439,7 +1439,7 @@ function PanneauAide({ fermer }) {
         {section("La tournée 🍹",
           `L'équipe qui gagne une mène offre une tournée de pastis à qui elle veut. Trois
            mènes d'affilée et les vainqueurs trinquent aussi. Chaque verre trouble un peu
-           plus la vue et la main. L'équipe qui finit à zéro est Fanny.`)}
+           plus la vue — et l'ouïe. L'équipe qui finit à zéro est Fanny.`)}
         {section("À plusieurs",
           `Jusqu'à 9 joueurs et 3 équipes. Tout le monde entre le même code de partie,
            chacun sur son appareil, et chaque lancer se rejoue en direct chez les autres.`)}
@@ -1953,12 +1953,13 @@ export default function Petanque() {
     const Ts = terrainDe(st);
     const DEP = departDe(Ts);
     const bodies = makeBodies(st);
-    // L'ivresse dégrade la précision : plus de tournées bues, plus le geste tremble
+    // L'ivresse ne touche plus au geste (décision des joueurs : le flou
+    // suffit) ; seule l'imprécision naturelle du lancer demeure, et elle
+    // grandit avec la force.
     const ivresse = Math.min(6, (st.drinks && st.drinks[lanceur.team]) || 0);
     const echelle = Ts.angleMax / 25; // le bruit angulaire suit l'ouverture du terrain
-    const noise = (Math.random() - 0.5) * 3 * (powerV / 100) * echelle
-                + (Math.random() - 0.5) * 2.6 * ivresse * echelle;
-    const puissance = Math.min(100, Math.max(25, powerV + (Math.random() - 0.5) * 7 * ivresse));
+    const noise = (Math.random() - 0.5) * 3 * (powerV / 100) * echelle;
+    const puissance = Math.min(100, Math.max(25, powerV));
     const rad = ((angleV + noise) * Math.PI) / 180;
     let thrown;
     if (!st.mene.cochonnet) {
