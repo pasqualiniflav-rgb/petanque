@@ -104,6 +104,34 @@ function scoreMene(st) {
   return { team: winner, pts: Math.max(1, pts) };
 }
 
+// Place un joueur à table. En pleine partie il rejoint une équipe déjà
+// engagée et attend la mène suivante pour recevoir ses boules — sinon il
+// entrerait au milieu d'une mène avec un compte de boules bancal.
+// Renvoie null si toutes les équipes ouvertes sont au complet.
+function ajouterJoueur(st, nom) {
+  const enCours = st.phase !== "lobby";
+  const engagees = enCours && activeTeams(st).length ? activeTeams(st) : TEAMS;
+  const compte = t => st.players.filter(p => p.team === t).length;
+  const libres = engagees.filter(t => compte(t) < 3);
+  if (!libres.length || st.players.length >= 9) return null;
+  const team = libres.reduce((a, b) => (compte(a) <= compte(b) ? a : b));
+  const pris = new Set(st.players.map(p => p.name.toLowerCase()));
+  let name = nom;
+  for (let i = 2; pris.has(name.toLowerCase()); i++) name = `${nom} ${i}`;
+  const p = { id: "p" + Date.now() + Math.floor(Math.random() * 1000), name, team };
+  st.players.push(p);
+  if (st.mene) st.mene.left[p.id] = 0; // ses boules arrivent à la mène suivante
+  return p;
+}
+
+// Reste-t-il une place à table ? En pleine partie, seules les équipes
+// déjà engagées comptent : on n'ouvre pas une équipe en plein milieu.
+function placeLibre(st) {
+  if (!st || st.players.length >= 9) return false;
+  const engagees = st.phase !== "lobby" && activeTeams(st).length ? activeTeams(st) : TEAMS;
+  return engagees.some(t => st.players.filter(p => p.team === t).length < 3);
+}
+
 function newMene(st, firstTeam, num) {
   // Équipes de tailles différentes : même total de boules par équipe.
   // Ex. à 2 contre 3 avec 2 boules/joueur : le duo reçoit 3 boules chacun.
@@ -1669,19 +1697,18 @@ export default function Petanque() {
         if (g.absents) g.absents[existing.id] = 0;
         await saveGame(c, g);
       }
-    } else if (g.phase !== "lobby") {
-      setNotice("La partie a déjà commencé — tu peux regarder en spectateur.");
-      setMeId(null);
-    } else if (g.players.length >= 9) {
-      setNotice("La partie est complète (9 joueurs) — mode spectateur.");
-      setMeId(null);
     } else {
-      const counts = Object.fromEntries(TEAMS.map(t => [t, g.players.filter(p => p.team === t).length]));
-      const team = TEAMS.reduce((a, b) => (counts[a] <= counts[b] ? a : b));
-      const p = { id: "p" + Date.now() + Math.floor(Math.random() * 1000), name: n, team };
-      g.players.push(p);
-      setMeId(p.id);
-      if (!(await saveGame(c, g))) { setNotice("Impossible d'enregistrer, réessaie."); setBusy(false); return; }
+      const p = ajouterJoueur(g, n);
+      if (!p) {
+        setNotice("Toutes les places sont prises — tu peux regarder la partie.");
+        setMeId(null);
+      } else {
+        setMeId(p.id);
+        if (g.phase !== "lobby") {
+          setNotice(`Tu entres chez ${TEAM_NAMES[p.team]} — tes boules arrivent à la mène suivante.`);
+        }
+        if (!(await saveGame(c, g))) { setNotice("Impossible d'enregistrer, réessaie."); setBusy(false); return; }
+      }
     }
     replayedRef.current = g?.replay?.id ?? null;
     seenTourneeRef.current = g?.lastTournee?.id ?? 0;
@@ -1716,6 +1743,14 @@ export default function Petanque() {
   });
 
   const retirerBot = id => mutate(g => { g.players = g.players.filter(p => p.id !== id); });
+
+  // Un spectateur peut entrer dans la partie dès qu'une place est libre
+  const entrerEnJeu = () => mutate(g => {
+    const p = ajouterJoueur(g, name.trim() || "Invité");
+    if (!p) { setNotice("Toutes les équipes sont au complet."); return; }
+    setMeId(p.id);
+    setNotice(`Tu entres chez ${TEAM_NAMES[p.team]} — tes boules arrivent à la mène suivante.`);
+  });
 
   // Un joueur parti sans prévenir : un bot prend sa place sans arrêter la
   // partie. Il garde son nom, ses boules et sa place dans l'ordre.
@@ -2079,6 +2114,14 @@ export default function Petanque() {
             <button key={t} style={{ ...S.tourneeBtn, borderColor: TEAM_COLORS[t] }} onClick={() => offrirTournee(t)}>{TEAM_NAMES[t]}</button>
           ))}
           <button style={S.tourneeBtn} onClick={() => offrirTournee(null)}>Passer</button>
+        </div>
+      )}
+      {!me && game.phase !== "finished" && (
+        <div style={S.tourneeBar}>
+          <span style={S.tourneeQ}>👀 Tu regardes la partie.</span>
+          {placeLibre(game) && (
+            <button style={S.tourneeBtn} onClick={entrerEnJeu}>Entrer dans la partie</button>
+          )}
         </div>
       )}
       {absentAProposer && (
