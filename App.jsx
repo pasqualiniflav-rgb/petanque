@@ -2063,6 +2063,17 @@ export default function Petanque() {
     if (!(await saveGame(code, st))) setNotice("Échec de synchronisation — le jeu réessaiera.");
   }
 
+  // Retour à l'accueil sans recharger : on coupe tout ce qui tourne (le
+  // flux temps réel se ferme tout seul au changement d'écran) et on garde
+  // prénom et code pré-remplis pour revenir en un geste.
+  const quitter = () => {
+    poserAnimating(false);
+    gelRef.current = null; setGel(null);
+    replayedRef.current = null; meneTracesRef.current = -1;
+    setNotice(""); setGame(null); setMeId(null);
+    setScreen("entry");
+  };
+
   // --- lancer au doigt ---------------------------------------------
   // Fronde : on touche le terrain, on tire vers l'arrière, on relâche.
   // L'angle du glissé donne la direction, sa longueur la force. Le geste
@@ -2136,13 +2147,23 @@ export default function Petanque() {
     }
   }
 
+  // Les outils : sons et aide partout ; en partie s'y ajoutent ↺ (revoir le
+  // dernier coup, quand il y en a un et que rien ne bouge) et ⌂.
+  const outils = (enPartie) => (
+    <div style={{ display: "flex", gap: 4 }}>
+      {enPartie && game?.replay && !animating && !gel && (
+        <button style={S.sndBtn} title="Revoir le dernier coup"
+                onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}>↺</button>
+      )}
+      <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
+      <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
+      <button style={S.sndBtn} onClick={() => setAide(true)} title="Règles du jeu">?</button>
+      {enPartie && <button style={S.sndBtn} onClick={quitter} title="Retour à l'accueil">⌂</button>}
+    </div>
+  );
   const boutonsSon = (
     <>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
-        <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
-        <button style={S.sndBtn} onClick={() => setAide(true)} title="Règles du jeu">?</button>
-      </div>
+      {outils(false)}
       {aide && <PanneauAide fermer={() => setAide(false)} />}
     </>
   );
@@ -2248,7 +2269,7 @@ export default function Petanque() {
           </p>
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={S.btnGhost} onClick={refresh}>Actualiser</button>
+          <button style={S.btnGhost} onClick={quitter}>⌂ Accueil</button>
           {boutonsSon}
         </div>
         {notice && <p style={S.notice}>{notice}</p>}
@@ -2270,7 +2291,7 @@ export default function Petanque() {
   const ligneTour = game.phase !== "playing" ? "Partie terminée"
     : gel && !gel.commit ? "résultat du lancer…"
     : myTurn ? `À toi, ${me?.name} !`
-    : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"} joue`;
+    : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"}`;
   const tableauAffichage = (
     <div style={S.tableau}>
       <div style={S.tableauCols}>
@@ -2299,7 +2320,7 @@ export default function Petanque() {
         {game.phase === "playing" && !animating && !gel && (
           <span style={{ ...S.tableauChrono, color: resteTemps <= 5 ? "#ff7a5c" : "#ffd23f" }}>{resteTemps}</span>
         )}
-        {boutonsSon}
+        {outils(true)}
       </div>
     </div>
   );
@@ -2307,6 +2328,7 @@ export default function Petanque() {
   return (
     <div style={S.pageGame}>
       <style>{CSS_IVRESSE}</style>
+      {aide && <PanneauAide fermer={() => setAide(false)} />}
       {tourneeAnim && (
         <div style={S.tourneeOverlay}>
           <div style={S.tourneeGlasses}>
@@ -2368,9 +2390,6 @@ export default function Petanque() {
           {activeTeams(game).filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
             <p key={t} style={S.sub}>{TEAM_NAMES[t]} est Fanny ! La tournée de pastis est pour eux.</p>
           ))}
-          {game.replay && !animating && (
-            <button style={S.btnGhost} onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}>Revoir le dernier coup</button>
-          )}
           {isHost && <button style={S.btn} onClick={resetGame}>Nouvelle partie</button>}
         </div>
       ) : (
@@ -2414,14 +2433,6 @@ export default function Petanque() {
                     : `👆 Touche le terrain et tire vers l'arrière : la flèche donne la direction, sa longueur la ${!cochToThrow && mode === "tir" ? "distance du tir" : "force"}.`}
                   {!geste && <button style={S.lien} onClick={() => basculerCurseurs(true)}>Préférer les curseurs</button>}
                 </p>
-              )}
-            </div>
-          )}
-          {!myTurn && !animating && !gel && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button style={S.btnGhost} onClick={refresh}>Actualiser</button>
-              {game.replay && (
-                <button style={S.btnGhost} onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}>Revoir le coup</button>
               )}
             </div>
           )}
