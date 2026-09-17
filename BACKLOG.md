@@ -29,7 +29,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | # | Item | Détail | État |
 |---|------|--------|------|
 | A1 | **Synchro** | ~~Sauts/coupures entre un lancer, son affichage et le tour suivant~~ ✅ Corrigé — le rafraîchissement de fin de rejeu se croyait encore en animation et ne faisait rien (attente du sondage, 0-4 s) ; résultat officiel désormais en ~30 ms, tapis figé le temps qu'il arrive, pause de 3 s sur le tapis final en fin de mène, chronomètre local (plus de dérive d'horloge entre téléphones) | ✅ |
-| B2 | **Lancer au doigt** | Glisser-relâcher sur le terrain : direction + force, flèche de visée ; curseurs gardés en option | ⬜ |
+| B2 | **Lancer au doigt** | ~~Glisser-relâcher sur le terrain : direction + force, flèche de visée ; curseurs gardés en option~~ ✅ Fronde : on touche, on tire vers l'arrière, on relâche ; flèche + jauge de force ; « Préférer les curseurs » retenu sur l'appareil | ✅ |
 | B3 | **Mise en page mobile** | Zéro scroll, terrain agrandi, zones tactiles ≥ 44 px | ⬜ |
 | B4 | **Scoreboard de stade** | Panneau d'affichage compact façon fronton de boulodrome | ⬜ |
 | B5 | **Boutons** | Suppression d'Actualiser, ↺ pour revoir, ⌂ retour accueil | ⬜ |

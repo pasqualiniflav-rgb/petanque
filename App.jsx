@@ -1240,18 +1240,6 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.beginPath();
   ctx.arc(START.x, START.y, 20, 0, Math.PI * 2);
   ctx.stroke();
-  // visée : simple repère de direction, la distance se jauge à l'œil
-  if (aim) {
-    const rad = (aim.angle * Math.PI) / 180;
-    const len = 70;
-    ctx.setLineDash([6, 6]);
-    ctx.strokeStyle = "rgba(60,50,30,0.45)";
-    ctx.beginPath();
-    ctx.moveTo(START.x, START.y);
-    ctx.lineTo(START.x + Math.sin(rad) * len, START.y - Math.cos(rad) * len);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
   for (const b of list) {
     if (b.dead) continue;
     // ombre portée : elle s'élargit et pâlit quand la boule quitte le sol
@@ -1287,6 +1275,48 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
 
   // lumière de fin d'après-midi sur l'ensemble de la scène
   ctx.drawImage(voileLumiere(), 0, 0);
+
+  // Visée, en coordonnées écran : ancrée en bas au centre, là où le joueur
+  // se tient. Sur le grand terrain le rond de départ peut être hors champ ;
+  // la direction reste lisible ici et sur la mini-carte.
+  if (aim) {
+    const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - 30;
+    const rad = (aim.angle * Math.PI) / 180;
+    if (aim.geste) {
+      // au doigt : la flèche s'allonge avec la force
+      const len = 46 + ((aim.power - 25) / 75) * 175;
+      const ex = ax + Math.sin(rad) * len, ey = ay - Math.cos(rad) * len;
+      const jaune = aim.valide ? "#f6c324" : "rgba(246,195,36,0.4)";
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(30,24,10,0.5)"; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.strokeStyle = jaune; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+      const t = Math.atan2(ey - ay, ex - ax);
+      ctx.fillStyle = jaune;
+      ctx.beginPath();
+      ctx.moveTo(ex + Math.cos(t) * 8, ey + Math.sin(t) * 8);
+      ctx.lineTo(ex + Math.cos(t + 2.5) * 9, ey + Math.sin(t + 2.5) * 9);
+      ctx.lineTo(ex + Math.cos(t - 2.5) * 9, ey + Math.sin(t - 2.5) * 9);
+      ctx.closePath(); ctx.fill();
+      // jauge de force autour du point d'appui
+      ctx.strokeStyle = "rgba(30,24,10,0.35)"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(ax, ay, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = jaune; ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 22, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * (aim.power - 25)) / 75);
+      ctx.stroke();
+    } else {
+      // aux curseurs : simple repère de direction, la distance se jauge à l'œil
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = "rgba(60,50,30,0.55)"; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax + Math.sin(rad) * 70, ay - Math.cos(rad) * 70);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
 
   // mini-carte du grand terrain
   if (T.camera && cam) {
@@ -1415,6 +1445,13 @@ export default function Petanque() {
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
   const [aide, setAide] = useState(false);
+  // Lancer au doigt par défaut ; les curseurs restent disponibles (bureau,
+  // accessibilité) et le choix est retenu sur l'appareil.
+  const [curseurs, setCurseurs] = useState(() => {
+    try { return localStorage.getItem("petanque.curseurs") === "1"; } catch { return false; }
+  });
+  const [geste, setGeste] = useState(null); // { angle, power, valide } pendant le glissé
+  const gesteRef = useRef(null);
   // Tapis figé à l'écran entre un lancer et la suite (voir « figer »)
   const [gel, setGel] = useState(null);
   const gelRef = useRef(null);
@@ -1749,8 +1786,10 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, myTurn && !gel ? { angle } : null, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel]);
+    const visee = geste ? { ...geste, geste: true }
+      : (myTurn && !gel && curseurs ? { angle } : null);
+    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -2024,6 +2063,61 @@ export default function Petanque() {
     if (!(await saveGame(code, st))) setNotice("Échec de synchronisation — le jeu réessaiera.");
   }
 
+  // --- lancer au doigt ---------------------------------------------
+  // Fronde : on touche le terrain, on tire vers l'arrière, on relâche.
+  // L'angle du glissé donne la direction, sa longueur la force. Le geste
+  // ne produit qu'un couple (angle, force) remis à throwBoule : la chaîne
+  // déterministe qui suit est la même qu'avec les curseurs.
+  const peutLancer = myTurn && !animating && !gel;
+
+  const basculerCurseurs = v => {
+    setCurseurs(v);
+    try { localStorage.setItem("petanque.curseurs", v ? "1" : "0"); } catch {}
+  };
+
+  const posCanvas = e => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const k = VIEW_W / r.width; // le canvas est mis à l'échelle par le CSS
+    return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k };
+  };
+
+  const surPointerDown = e => {
+    if (!peutLancer || curseurs) return;
+    const p = posCanvas(e);
+    gesteRef.current = { x0: p.x, y0: p.y, dernier: null };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    setGeste({ angle: 0, power: 25, valide: false });
+    e.preventDefault();
+  };
+
+  const surPointerMove = e => {
+    const g0 = gesteRef.current;
+    if (!g0) return;
+    const p = posCanvas(e);
+    const dx = p.x - g0.x0, dy = p.y - g0.y0;
+    const len = Math.hypot(dx, dy);
+    const A = T.angleMax;
+    // un glissé à 40° de la verticale donne l'angle maximal du terrain :
+    // la même amplitude de geste sert les deux terrains
+    const brut = (Math.atan2(-dx, dy) * 180) / Math.PI;
+    const angle = Math.round(Math.max(-A, Math.min(A, brut * (A / 40))));
+    const power = Math.round(Math.max(25, Math.min(100, 25 + ((len - 24) / 190) * 75)));
+    const g = { angle, power, valide: dy > 24 && len > 24 };
+    g0.dernier = g;
+    setGeste(g);
+  };
+
+  const surPointerUp = () => {
+    const g0 = gesteRef.current;
+    if (!g0) return;
+    gesteRef.current = null;
+    setGeste(null);
+    const g = g0.dernier;
+    if (g && g.valide) throwBoule(meId, g.angle, g.power, mode);
+  };
+
+  const surPointerCancel = () => { gesteRef.current = null; setGeste(null); };
+
   // --- rendu ------------------------------------------------------
   const S = styles;
 
@@ -2260,7 +2354,9 @@ export default function Petanque() {
               filter: `blur(${Math.min(2.2, ivresseNiveau * 0.35)}px) sepia(${Math.min(0.5, ivresseNiveau * 0.08)}) saturate(${1 + ivresseNiveau * 0.06})`,
             } : {}),
           }}>
-            <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas} />
+            <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas}
+              onPointerDown={surPointerDown} onPointerMove={surPointerMove}
+              onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
           </div>
           {myTurn && !animating && !gel && (
             <div style={S.card}>
@@ -2272,13 +2368,25 @@ export default function Petanque() {
                   <button style={mode === "tir" ? S.btnSmallOn : S.btnSmall} onClick={() => setMode("tir")}>Tirer</button>
                 </div>
               )}
-              <label style={S.label}>Direction</label>
-              <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
-              <label style={S.label}>{!cochToThrow && mode === "tir" ? "Distance de tir" : "Force"}</label>
-              <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
-              <button style={S.btn} onClick={() => throwBoule()}>
-                {cochToThrow ? "Lancer le cochonnet" : mode === "tir" ? "Tirer !" : "Lancer la boule"}
-              </button>
+              {curseurs ? (
+                <>
+                  <label style={S.label}>Direction</label>
+                  <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
+                  <label style={S.label}>{!cochToThrow && mode === "tir" ? "Distance de tir" : "Force"}</label>
+                  <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
+                  <button style={S.btn} onClick={() => throwBoule()}>
+                    {cochToThrow ? "Lancer le cochonnet" : mode === "tir" ? "Tirer !" : "Lancer la boule"}
+                  </button>
+                  <button style={S.lien} onClick={() => basculerCurseurs(false)}>Lancer au doigt</button>
+                </>
+              ) : (
+                <p style={S.gesteHint}>
+                  {geste
+                    ? (geste.valide ? "Relâche pour lancer." : "Tire vers l'arrière…")
+                    : `👆 Touche le terrain et tire vers l'arrière : la flèche donne la direction, sa longueur la ${!cochToThrow && mode === "tir" ? "distance du tir" : "force"}.`}
+                  {!geste && <button style={S.lien} onClick={() => basculerCurseurs(true)}>Préférer les curseurs</button>}
+                </p>
+              )}
             </div>
           )}
           {!myTurn && !animating && !gel && (
@@ -2357,6 +2465,7 @@ const styles = {
   canvas: {
     borderRadius: 10, boxShadow: "0 4px 18px rgba(0,0,0,0.35)",
     maxWidth: "100%", maxHeight: "100%", touchAction: "none",
+    userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
   scoreRow: { display: "flex", gap: 8, width: "100%", maxWidth: 360 },
   chip: {
@@ -2409,6 +2518,11 @@ const styles = {
     textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.4,
   },
   range: { width: "100%" },
+  gesteHint: { fontSize: 13, lineHeight: 1.45, margin: 0, opacity: 0.9, textAlign: "center" },
+  lien: {
+    border: "none", background: "transparent", color: "#8fd4f0", fontSize: 12,
+    textDecoration: "underline", cursor: "pointer", padding: "6px 8px", minHeight: 32,
+  },
   aideFond: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(22, 27, 14, 0.88)",
     overflowY: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center",
