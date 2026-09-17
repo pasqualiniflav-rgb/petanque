@@ -983,6 +983,37 @@ function spriteOmbreBoule() {
   return cv;
 }
 
+// ---------- Lumière de fin d'après-midi ---------------------------
+// Voile chaud et vignettage, pré-rendus une fois pour tout le canvas :
+// ils relient la bande de décor et le terrain sous une même lumière.
+
+let voileCache = null;
+
+function voileLumiere() {
+  if (voileCache) return voileCache;
+  const cv = document.createElement("canvas");
+  cv.width = VIEW_W; cv.height = CANVAS_H;
+  const cx = cv.getContext("2d");
+  // le soleil est bas à droite : la lumière traverse la scène en biais
+  const chaud = cx.createLinearGradient(VIEW_W, 0, 0, CANVAS_H);
+  chaud.addColorStop(0, "rgba(255,206,124,0.16)");
+  chaud.addColorStop(0.4, "rgba(255,196,118,0.07)");
+  chaud.addColorStop(1, "rgba(86,74,128,0.08)"); // à l'opposé, l'ombre bleuit
+  cx.fillStyle = chaud;
+  cx.fillRect(0, 0, VIEW_W, CANVAS_H);
+  // vignettage : les bords s'éteignent doucement
+  const vig = cx.createRadialGradient(
+    VIEW_W * 0.5, CANVAS_H * 0.46, VIEW_W * 0.3,
+    VIEW_W * 0.5, CANVAS_H * 0.46, CANVAS_H * 0.7);
+  vig.addColorStop(0, "rgba(38,28,12,0)");
+  vig.addColorStop(0.65, "rgba(38,28,12,0.08)");
+  vig.addColorStop(1, "rgba(38,28,12,0.3)");
+  cx.fillStyle = vig;
+  cx.fillRect(0, 0, VIEW_W, CANVAS_H);
+  voileCache = cv;
+  return cv;
+}
+
 // ---------- Dessin ------------------------------------------------
 
 export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
@@ -1054,8 +1085,15 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     ctx.drawImage(texOmbre, -OMBRE_R, -OMBRE_R);
     ctx.restore();
   }
-  // bordure et rond de lancer
-  ctx.strokeStyle = "#efe6cf"; ctx.lineWidth = 2;
+  // bordure et rond de lancer : tracés à la ficelle, pas à la peinture
+  ctx.strokeStyle = "rgba(66,50,26,0.3)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(5, 5, T.W - 8, T.L - 8);
+  ctx.beginPath();
+  ctx.arc(START.x + 1, START.y + 1, 20, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(243,234,212,0.62)";
+  ctx.lineWidth = 2;
   ctx.strokeRect(4, 4, T.W - 8, T.L - 8);
   ctx.beginPath();
   ctx.arc(START.x, START.y, 20, 0, Math.PI * 2);
@@ -1105,16 +1143,21 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.fillStyle = ombre;
   ctx.fillRect(0, SKY_H, VIEW_W, 26);
 
+  // lumière de fin d'après-midi sur l'ensemble de la scène
+  ctx.drawImage(voileLumiere(), 0, 0);
+
   // mini-carte du grand terrain
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const mw = 40, mh = Math.round(mw * T.L / T.W);
     const mx = VIEW_W - mw - 6, my = SKY_H + 6, s = mw / T.W;
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = "#cdb98f";
+    // petite plaquette posée sur le terrain, cerclée de jaune pastis
+    ctx.fillStyle = "rgba(38,30,14,0.5)";
+    ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
+    ctx.fillStyle = "rgba(206,186,144,0.8)";
     ctx.fillRect(mx, my, mw, mh);
-    ctx.strokeStyle = "#efe6cf"; ctx.lineWidth = 1;
-    ctx.strokeRect(mx, my, mw, mh);
+    ctx.strokeStyle = "rgba(246,195,36,0.45)"; ctx.lineWidth = 1;
+    ctx.strokeRect(mx - 1.5, my - 1.5, mw + 3, mh + 3);
     if (aim) { // direction du lancer (jamais la distance)
       const rad = (aim.angle * Math.PI) / 180;
       ctx.strokeStyle = "rgba(60,50,30,0.6)";
@@ -1128,9 +1171,8 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
       ctx.fillStyle = b.kind === "coch" ? "#c67f1e" : TEAM_COLORS[b.team];
       ctx.fillRect(mx + b.x * s - 1.5, my + b.y * s - 1.5, 3, 3);
     }
-    ctx.strokeStyle = "#26200c";
+    ctx.strokeStyle = "rgba(255,250,232,0.9)";
     ctx.strokeRect(mx + (cam.x - VIEW_W / 2) * s, my + (cam.y - VIEW_H / 2) * s, VIEW_W * s, VIEW_H * s);
-    ctx.globalAlpha = 1;
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
