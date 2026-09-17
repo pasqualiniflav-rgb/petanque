@@ -27,7 +27,10 @@ export const TERRAINS = {
     camera: false, subSteps: 1, stopSeuil: 0.04,
     muRoll: 0.9855, angleMax: 25,
     vPoint: p => 2.9 + (p / 100) * 4.6,
-    vTir: 8.5, muTir: 0.88,
+    // Tolérance du carreau : après l'atterrissage la boule tirée ne roule
+    // plus que ~35 px (au lieu de ~70) — sans jauge de force, la cible se
+    // touchait sur 60 px de geste, c'était trop facile. Aucun aléa.
+    vTir: 8.5, muTir: 0.76,
     airTir: p => Math.max(60, 140 + (p / 100) * 360 - 26),
     cochMin: 170, skidSeuil: 4, skidMu: 0.94,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
@@ -260,7 +263,7 @@ const NIVEAUX_BOT = {
   fada:     { nom: "Fada",    sous: "chirurgical", grille: 8, affine: 2, bruitA: 0.03, bruitF: 2,  tire: true },
 };
 const ORDRE_BOTS = ["fanny", "pointeur", "fada"];
-// Pour le 🎲 de l'accueil : de quoi se trouver un prénom d'ici en un geste.
+// Pour le dé de l'accueil : de quoi se trouver un prénom d'ici en un geste.
 // Tout cet aléa reste hors de la simulation.
 const PRENOMS_PROVENCE = ["Marius", "Fanny", "César", "Panisse", "Honorine", "Escartefigue",
   "Titin", "Félicie", "Ugolin", "Manon", "Angèle", "Galinette", "Baptistin", "Mireille",
@@ -1000,8 +1003,14 @@ export function marquerTraces(bodies, T, inscrire = true) {
     if (enVol) {
       b._lob = b._air0 > 0 ? Math.sin((1 - b.air / b._air0) * Math.PI) : 0;
       b._saut = true; // rien au sol tant qu'elle vole
+      if (b.tir) { // sillage de la boule tirée : purement visuel
+        const sil = b._sillage || (b._sillage = []);
+        sil.push({ x: b.x, y: b.y, h: b._lob * 16 });
+        if (sil.length > 10) sil.shift();
+      }
       continue;
     }
+    if (b._sillage && b._sillage.length) b._sillage = b._sillage.slice(-Math.max(0, b._sillage.length - 2));
     if (b._tAir > 0 && !b.dead) {
       b._lob = 0;
       if (inscrire) (b.tir ? marquerImpact : marquerPose)(t.cx, b, ech);
@@ -1183,26 +1192,7 @@ function voileLumiere() {
 
 // ---------- Dessin ------------------------------------------------
 
-// Petite pilule de texte dessinée sur le canvas : bandeau de résultat sur
-// le décor, indication de geste ou message sur le sable. Ça libère autant
-// de rangées d'écran pour le terrain.
-function pilule(ctx, texte, y, accent) {
-  if (!texte) return;
-  ctx.save();
-  ctx.font = `${accent ? "600 " : ""}12px -apple-system, 'Segoe UI', Roboto, sans-serif`;
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  const w = Math.min(VIEW_W - 12, ctx.measureText(texte).width + 22), h = 24;
-  const x = VIEW_W / 2;
-  ctx.fillStyle = accent ? "rgba(246,195,36,0.92)" : "rgba(24,28,16,0.78)";
-  ctx.beginPath();
-  ctx.roundRect ? ctx.roundRect(x - w / 2, y - h / 2, w, h, 12) : ctx.rect(x - w / 2, y - h / 2, w, h);
-  ctx.fill();
-  ctx.fillStyle = accent ? "#26200c" : "#f2eddd";
-  ctx.fillText(texte, x, y + 1, w - 14);
-  ctx.restore();
-}
-
-export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
+export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   const list = bodiesOverride || makeBodies(st);
   const START = departDe(T);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1286,16 +1276,29 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
   ctx.stroke();
   for (const b of list) {
     if (b.dead) continue;
-    // ombre portée : elle s'élargit et pâlit quand la boule quitte le sol
-    const lift = (b._lob || 0) * (b.tir ? 9 : 7); // hauteur apparente en vol
-    const eo = b.r * (2.5 + lift * 0.1);
-    ctx.globalAlpha = lift ? 0.55 : 1;
+    // ombre portée : elle s'élargit, s'écarte et pâlit quand la boule
+    // quitte le sol ; en tir, on doit voir qu'elle vole
+    const lob = b._lob || 0;
+    const lift = lob * (b.tir ? 16 : 7); // hauteur apparente en vol
+    const eo = b.r * (2.5 + lift * 0.08);
+    ctx.globalAlpha = lift ? Math.max(0.3, 1 - lob * 0.6) : 1;
     ctx.drawImage(spriteOmbreBoule(),
-      b.x + 1.6 + lift * 0.35 - eo / 2, b.y + 3.2 + lift * 0.5 - eo * 0.33, eo, eo * 0.66);
+      b.x + 1.6 + lift * 0.45 - eo / 2, b.y + 3.2 + lift * 0.7 - eo * 0.33, eo, eo * 0.66);
     ctx.globalAlpha = 1;
-    // corps
+    // fine traînée derrière la boule tirée
+    if (b.tir && b._sillage && b._sillage.length > 1) {
+      ctx.save();
+      ctx.lineCap = "round"; ctx.lineWidth = 1.5;
+      for (let i = 1; i < b._sillage.length; i++) {
+        const p0 = b._sillage[i - 1], p1 = b._sillage[i];
+        ctx.strokeStyle = `rgba(255,255,255,${(0.35 * i) / b._sillage.length})`;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y - p0.h); ctx.lineTo(p1.x, p1.y - p1.h); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // corps : la boule tirée grossit nettement en l'air
     const by = b.y - lift;
-    dessinerBoule(ctx, b.x, by, b.r + (lift ? 1.5 : 0),
+    dessinerBoule(ctx, b.x, by, b.r * (1 + lob * (b.tir ? 0.55 : 0.12)),
       b.kind === "coch" ? "coch" : TEAM_COLORS[b.team]);
     if (ivresse > 0) { // vision double : un fantôme décalé de chaque boule
       ctx.globalAlpha = Math.min(0.35, 0.1 + ivresse * 0.045);
@@ -1320,52 +1323,27 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
   // lumière de fin d'après-midi sur l'ensemble de la scène
   ctx.drawImage(voileLumiere(), 0, 0);
 
-  // Visée, en coordonnées écran : ancrée en bas au centre, là où le joueur
-  // se tient. Sur le grand terrain le rond de départ peut être hors champ ;
-  // la direction reste lisible ici et sur la mini-carte.
+  // Visée, en coordonnées écran, ancrée en bas au centre là où le joueur se
+  // tient : direction seule — trait plein en pointé, pointillé en tir —
+  // ni jauge de force ni point de chute, la distance se jauge au geste.
   if (aim) {
     const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - 30;
     const rad = (aim.angle * Math.PI) / 180;
-    if (aim.geste) {
-      // au doigt : la flèche s'allonge avec la force
-      const len = 46 + ((aim.power - 25) / 75) * 175;
-      const ex = ax + Math.sin(rad) * len, ey = ay - Math.cos(rad) * len;
-      const jaune = aim.valide ? "#f6c324" : "rgba(246,195,36,0.4)";
-      ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.strokeStyle = "rgba(30,24,10,0.5)"; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
-      ctx.strokeStyle = jaune; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
-      const t = Math.atan2(ey - ay, ex - ax);
-      ctx.fillStyle = jaune;
-      ctx.beginPath();
-      ctx.moveTo(ex + Math.cos(t) * 8, ey + Math.sin(t) * 8);
-      ctx.lineTo(ex + Math.cos(t + 2.5) * 9, ey + Math.sin(t + 2.5) * 9);
-      ctx.lineTo(ex + Math.cos(t - 2.5) * 9, ey + Math.sin(t - 2.5) * 9);
-      ctx.closePath(); ctx.fill();
-      // jauge de force autour du point d'appui
-      ctx.strokeStyle = "rgba(30,24,10,0.35)"; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(ax, ay, 22, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = jaune; ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(ax, ay, 22, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * (aim.power - 25)) / 75);
-      ctx.stroke();
-    } else {
-      // aux curseurs : simple repère de direction, la distance se jauge à l'œil
-      ctx.setLineDash([6, 6]);
-      ctx.strokeStyle = "rgba(60,50,30,0.55)"; ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(ax + Math.sin(rad) * 70, ay - Math.cos(rad) * 70);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
-
-  // textes posés sur la scène
-  if (hud) {
-    pilule(ctx, hud.banniere, SKY_H - 14, false);
-    pilule(ctx, hud.notice || hud.indication, SKY_H + VIEW_H - 66, !!hud.notice);
+    const len = 120;
+    const ex = ax + Math.sin(rad) * len, ey = ay - Math.cos(rad) * len;
+    ctx.save();
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = "#6b573a"; ctx.fillStyle = "#6b573a"; ctx.lineWidth = 2;
+    if (aim.mode === "tir") ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.setLineDash([]);
+    const t = Math.atan2(ey - ay, ex - ax);
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(t) * 9, ey + Math.sin(t) * 9);
+    ctx.lineTo(ex + Math.cos(t + 2.6) * 9, ey + Math.sin(t + 2.6) * 9);
+    ctx.lineTo(ex + Math.cos(t - 2.6) * 9, ey + Math.sin(t - 2.6) * 9);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 
   // mini-carte du grand terrain
@@ -1399,7 +1377,100 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-// ---------- Animations CSS ----------------------------------------
+// ---------- Direction artistique (DESIGN.md) ----------------------
+// « Le boulodrome de 1962 » : plaques émaillées crème à liseré bleu nuit,
+// boutons imprimés à ombre dure, chiffres Oswald, titres Alfa Slab One.
+// Les valeurs viennent des maquettes validées, reprises telles quelles.
+
+const CREME = "#f2ecdc", NUIT = "#1d3a4f", ARDOISE = "#2e2a24", PASTIS = "#f6c324";
+
+const CSS_BASE = `
+.bp,.bs,.bi{font-family:'Oswald',sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;box-sizing:border-box}
+.bp{background:${PASTIS};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 ${NUIT};padding:13px 10px;font-size:17px;font-weight:700;letter-spacing:1.5px;color:${NUIT};min-height:48px}
+.bs{background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(29,58,79,.6);padding:11px 10px;font-size:15px;font-weight:600;letter-spacing:1.5px;color:${NUIT};display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px}
+.bs.petit{padding:6px 10px;font-size:12px;letter-spacing:1px;min-height:36px;gap:6px;white-space:nowrap}
+.bs.creux{background:transparent}
+.bi{width:40px;height:40px;background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;color:${NUIT};font-size:18px;font-weight:700}
+.bi.g{width:46px;height:46px;font-size:20px}
+.bi.off svg{opacity:.35}
+.bp:active,.bs:active,.bi:active{transform:translateY(3px);box-shadow:none}
+.bp:disabled{opacity:.6;cursor:default}
+.champ{background:#faf6ea;border:2px solid ${NUIT};border-radius:4px;padding:10px 12px;font-family:'Oswald',sans-serif;font-size:17px;color:${NUIT};outline:none;box-sizing:border-box;width:100%;min-width:0}
+.champ:focus{box-shadow:inset 0 0 0 1px ${NUIT}}
+.puce{display:inline-flex;align-items:center;gap:5px;background:${NUIT};color:${CREME};border-radius:4px;padding:5px 9px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.5px}
+.puce .x{border:none;background:transparent;color:${CREME};padding:0 0 0 4px;cursor:pointer;display:flex;align-items:center;min-height:24px}
+input[type=range]{accent-color:${NUIT}}
+`;
+
+// Le set d'icônes, trait 2 px, même graisse partout. Chemins repris des
+// maquettes ; aucun émoji dans l'interface.
+const ICONES = {
+  rejouer: ["M3 12a9 9 0 1 0 2.6-6.4", "M3 4v5h5"],
+  tourner: ["M21 12a9 9 0 1 1-2.6-6.4", "M21 3v6h-6"],
+  son: ["M11 5 6 9H3v6h3l5 4z", "M15.5 8.5a5 5 0 0 1 0 7", "M18.5 5.5a9.5 9.5 0 0 1 0 13"],
+  muet: ["M11 5 6 9H3v6h3l5 4z", "M16 9l5 6", "M21 9l-5 6"],
+  note: ["M10 18V5l10-2v13", { c: [7, 18, 3] }, { c: [17, 16, 3] }],
+  maison: ["M3 11 12 4l9 7", "M5 10v9h14v-9", "M10 19v-5h4v5"],
+  de: [{ r: [3, 3, 18, 18, 3] }, { p: [8.5, 8.5] }, { p: [15.5, 15.5] }, { p: [15.5, 8.5] }, { p: [8.5, 15.5] }],
+  partage: ["M12 15V4", "M8 8l4-4 4 4", "M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"],
+  engrenage: [{ c: [12, 12, 3] }, "M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"],
+  croix: ["M6 6l12 12", "M18 6 6 18"],
+  horloge: [{ c: [12, 13, 8] }, "M12 9v4l3 2", "M9 2h6"],
+  robot: [{ r: [5, 8, 14, 11, 2] }, "M12 8V5", { c: [12, 4, 1] }, { p: [9.5, 13] }, { p: [14.5, 13] }, "M9 16.5h6", "M5 12H3", "M19 12h2"],
+  oeil: [{ c: [12, 12, 3] }, "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"],
+};
+
+function Ico({ nom, taille = 20, couleur = NUIT, epaisseur = 2 }) {
+  const el = ICONES[nom] || [];
+  return (
+    <svg width={taille} height={taille} viewBox="0 0 24 24" fill="none" stroke={couleur}
+         strokeWidth={epaisseur} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {el.map((e, i) => typeof e === "string" ? <path key={i} d={e} />
+        : e.c ? <circle key={i} cx={e.c[0]} cy={e.c[1]} r={e.c[2]} />
+        : e.r ? <rect key={i} x={e.r[0]} y={e.r[1]} width={e.r[2]} height={e.r[3]} rx={e.r[4]} />
+        : <circle key={i} cx={e.p[0]} cy={e.p[1]} r={1.4} fill={couleur} stroke="none" />)}
+    </svg>
+  );
+}
+
+// Le verre de pastis dessiné (anisette et glaçon) : petit sur le fronton,
+// grand sur la pop-in de tournée. Chemins de la maquette.
+function Verre({ grand, couleur = CREME }) {
+  if (grand) return (
+    <svg width="54" height="70" viewBox="0 0 54 70" fill="none" stroke={NUIT} strokeWidth="2.5" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 4h36l-6 40a12 12 0 0 1-24 0z" fill="#faf6ea" />
+      <path d="M13.5 14h27l-3.6 27a9.5 9.5 0 0 1-19.8 0z" fill={PASTIS} stroke="none" />
+      <rect x="20" y="17" width="10" height="10" rx="2" fill="#dff0f6" stroke={NUIT} strokeWidth="1.6" transform="rotate(12 25 22)" />
+      <path d="M27 46v14" /><path d="M15 66h24" />
+    </svg>
+  );
+  return (
+    <svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke={couleur} strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 1h8l-1.2 7a2.8 2.8 0 0 1-5.6 0z" /><path d="M6 9v3" /><path d="M3.5 13h5" />
+      <rect x="4" y="2.4" width="4" height="4.4" fill={PASTIS} stroke="none" />
+    </svg>
+  );
+}
+const Boule = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="#d9d9d9" stroke="#8f8f8f" strokeWidth="1" /></svg>
+);
+
+// Le trophée : cochonnet d'or sur son socle
+const Trophee = () => (
+  <svg width="86" height="92" viewBox="0 0 86 92" aria-hidden="true" style={{ animation: "dore 1s cubic-bezier(.2,1.4,.4,1) both" }}>
+    <defs>
+      <radialGradient id="or" cx="35%" cy="30%" r="70%">
+        <stop offset="0" stopColor="#fff6c8" /><stop offset=".3" stopColor="#ffd23f" />
+        <stop offset=".75" stopColor="#c98a12" /><stop offset="1" stopColor="#6b4a08" />
+      </radialGradient>
+    </defs>
+    <rect x="18" y="72" width="50" height="10" rx="2" fill={NUIT} />
+    <rect x="10" y="80" width="66" height="10" rx="2" fill={NUIT} />
+    <rect x="36" y="58" width="14" height="16" fill="#c98a12" stroke={NUIT} strokeWidth="2" />
+    <circle cx="43" cy="34" r="26" fill="url(#or)" stroke={NUIT} strokeWidth="2.5" />
+    <path d="M30 26a17 17 0 0 1 12-8" stroke="#fff6c8" strokeWidth="3" strokeLinecap="round" fill="none" />
+  </svg>
+);
 
 // Fin de partie : confettis, cochonnet doré, tampon Fanny
 const CSS_FETE = `
@@ -1422,7 +1493,7 @@ function Confettis({ graine }) {
   // Un jet de confettis aux couleurs des équipes et du pastis ; l'aléa
   // ne sert qu'à la fête, jamais au jeu.
   const pieces = React.useMemo(() => {
-    const couleurs = ["#f6c324", "#2ba3d4", "#bd4f3a", "#c9a02e", "#8fd4f0", "#f2eddd"];
+    const couleurs = [PASTIS, "#2ba3d4", "#bd4f3a", "#c9a02e", "#8fd4f0", CREME];
     return Array.from({ length: 48 }, (_, i) => ({
       left: Math.random() * 100, delai: Math.random() * 2.5, duree: 3 + Math.random() * 2.5,
       taille: 6 + Math.random() * 8, couleur: couleurs[i % couleurs.length],
@@ -1461,7 +1532,7 @@ const CSS_IVRESSE = `
 
 // ---------- Écran d'aide ------------------------------------------
 // Les nouveaux arrivent par un lien, sans rien connaître : tout ce qu'il
-// faut savoir tient sur une page, accessible de partout par le « ? ».
+// faut savoir tient sur une plaque, accessible de partout par le « ? ».
 
 function PanneauAide({ fermer }) {
   const S = styles;
@@ -1472,9 +1543,9 @@ function PanneauAide({ fermer }) {
     </div>
   );
   return (
-    <div style={S.aideFond} onClick={fermer}>
-      <div style={S.aideCarte} onClick={e => e.stopPropagation()}>
-        <h2 style={S.aideTitre}>La pétanque, en deux minutes</h2>
+    <div style={S.voile} onClick={fermer}>
+      <div style={{ ...S.plaque, maxWidth: 400, gap: 10 }} onClick={e => e.stopPropagation()}>
+        <h2 style={S.plaqueTitre}>LA PÉTANQUE EN DEUX MINUTES</h2>
         {section("Le but",
           `Le premier à ${TARGET} points gagne. À chaque mène, l'équipe qui a la boule
            la plus proche du cochonnet marque un point par boule mieux placée que la
@@ -1488,29 +1559,30 @@ function PanneauAide({ fermer }) {
            cochonnet — en l'air, elle passe par-dessus les autres. Tirer : elle vole
            jusqu'à son point de chute et frappe sec — c'est comme ça qu'on fait un
            carreau.`)}
-        {section("Les réglages",
-          `Direction et force sont remélangées avant chaque coup et les chiffres restent
-           cachés : ça se juge à l'œil, comme au vrai jeu. Vingt secondes par lancer,
-           après quoi la boule part toute seule.`)}
+        {section("Le geste",
+          `Touche le terrain et tire vers l'arrière : la flèche donne la direction,
+           la longueur du geste donne la force — elle ne s'affiche pas, ça se juge à
+           l'œil, comme au vrai jeu. Vingt secondes par lancer, après quoi la boule
+           part toute seule.`)}
         {section("Boule morte",
           `Une boule qui franchit la ligne du fond est perdue. Sur les côtés, elle ne
            meurt que si elle sort entièrement.`)}
         {section("Les terrains",
           `Classique : tout le terrain tient à l'écran. Long 10 m : la caméra suit
            l'action et la mini-carte montre l'ensemble.`)}
-        {section("Les bots 🤖",
-          `L'hôte peut ajouter des joueurs artificiels — Fanny la débutante, le Pointeur,
-           ou le Fada chirurgical — dans n'importe quelle équipe : on peut jouer seul. Un
-           joueur qui laisse filer trois lancers peut être remplacé par un bot, et
-           reprendre sa place dès qu'il revient.`)}
-        {section("La tournée 🍹",
+        {section("Les bots",
+          `L'hôte peut ajouter des joueurs artificiels — Fanny la débutante, le Pointeur
+           correct, le Fada chirurgical — dans n'importe quelle équipe : on peut jouer
+           seul. Un joueur qui laisse filer trois lancers peut être remplacé par un bot,
+           et reprendre sa place dès qu'il revient.`)}
+        {section("La tournée",
           `L'équipe qui gagne une mène offre une tournée de pastis à qui elle veut. Trois
            mènes d'affilée et les vainqueurs trinquent aussi. Chaque verre trouble un peu
            plus la vue — et l'ouïe. L'équipe qui finit à zéro est Fanny.`)}
         {section("À plusieurs",
           `Jusqu'à 9 joueurs et 3 équipes. Tout le monde entre le même code de partie,
            chacun sur son appareil, et chaque lancer se rejoue en direct chez les autres.`)}
-        <button style={S.btn} onClick={fermer}>Allez, on joue</button>
+        <button className="bp" onClick={fermer}>ALLEZ, ON JOUE</button>
       </div>
     </div>
   );
@@ -1544,11 +1616,25 @@ export default function Petanque() {
   });
   const [geste, setGeste] = useState(null); // { angle, power, valide } pendant le glissé
   const gesteRef = useRef(null);
+  // Les rappels de geste s'effacent après les deux premiers lancers du
+  // joueur — état local, rien de stocké
+  const [lancersFaits, setLancersFaits] = useState(0);
+  // Le bandeau de résultat s'affiche quelques secondes puis disparaît de lui-même
+  const [banniere, setBanniere] = useState(null);
+  const derniereMeneAnnonceeRef = useRef(null);
+  useEffect(() => {
+    const lr = game?.lastResult;
+    if (!lr || game.phase !== "playing") { setBanniere(null); return; }
+    if (derniereMeneAnnonceeRef.current === lr.mene) return;
+    derniereMeneAnnonceeRef.current = lr.mene;
+    setBanniere(`${CRIS[lr.mene % CRIS.length]} ${TEAM_NAMES[lr.team].replace("Équipe ", "")} marque ${lr.pts} pt${lr.pts > 1 ? "s" : ""} — mène ${lr.mene}`);
+    const t = setTimeout(() => setBanniere(null), 7000);
+    return () => clearTimeout(t);
+  }, [game?.lastResult?.mene, game?.phase]);
   // Tapis figé à l'écran entre un lancer et la suite (voir « figer »)
   const [gel, setGel] = useState(null);
   const gelRef = useRef(null);
   gelRef.current = gel;
-  const hudRef = useRef({}); // textes à dessiner sur le canvas (voir plus bas)
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
@@ -1632,7 +1718,7 @@ export default function Petanque() {
 
   useEffect(() => { reglerIvresseCigales(ivresseNiveau); }, [ivresseNiveau]);
 
-  // Le son ne part que sur demande : 🦗 et 🎵 sont les seuls déclencheurs
+  // Le son ne part que sur demande : les boutons cigales et musique sont les seuls déclencheurs
   // (décision des joueurs de la partie test).
 
   // Une tournée vient d'être offerte : grande animation chez les arrosés,
@@ -1739,7 +1825,7 @@ export default function Petanque() {
       try {
         const moving = stepPhysics(bodies, Tg);
         marquerTraces(bodies, Tg, marquer);
-        drawField(ctx, g, bodies, null, ivresse, Tg, hudRef.current);
+        drawField(ctx, g, bodies, null, ivresse, Tg);
         frames++;
         if (moving && frames < 1200) requestAnimationFrame(loop);
         else finir();
@@ -1886,10 +1972,11 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    const visee = geste ? { ...geste, geste: true }
-      : (myTurn && !gel && curseurs ? { angle } : null);
-    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T, hudRef.current);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, notice]);
+    const modeVisee = cochToThrow ? "point" : mode;
+    const visee = geste ? { angle: geste.angle, mode: modeVisee }
+      : (myTurn && !gel && curseurs ? { angle, mode: modeVisee } : null);
+    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, mode, cochToThrow]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -2049,6 +2136,7 @@ export default function Petanque() {
     const rad = ((angleV + noise) * Math.PI) / 180;
     const genre = !st.mene.cochonnet ? "coch" : modeV === "tir" ? "tir" : "point";
     const thrown = corpsLance(Ts, genre, puissance, rad, genre === "coch" ? { pid } : { team: lanceur.team, pid });
+    if (pid === meId && !auto) setLancersFaits(n => n + 1);
     bodies.push({ ...thrown });
     // Annonce immédiate du lancer : les autres appareils le rejouent en direct,
     // au même top départ — la physique déterministe garantit le même résultat
@@ -2073,7 +2161,7 @@ export default function Petanque() {
       try {
         const moving = stepPhysics(bodies, Ts);
         marquerTraces(bodies, Ts);
-        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts, hudRef.current);
+        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts);
         frames++;
         if (moving && frames < 1200) { requestAnimationFrame(loop); }
         else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid, auto); }
@@ -2249,291 +2337,305 @@ export default function Petanque() {
 
   // Les outils : sons et aide partout ; en partie s'y ajoutent ↺ (revoir le
   // dernier coup, quand il y en a un et que rien ne bouge) et ⌂.
-  const outils = (enPartie) => (
-    <div style={{ display: "flex", gap: 4 }}>
-      {enPartie && game?.replay && !animating && !gel && (
-        <button style={S.sndBtn} title="Revoir le dernier coup"
-                onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}>↺</button>
-      )}
-      <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
-      <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
-      <button style={S.sndBtn} onClick={() => setAide(true)} title="Règles du jeu">?</button>
-      {enPartie && <button style={S.sndBtn} onClick={quitter} title="Retour à l'accueil">⌂</button>}
-    </div>
-  );
-  const boutonsSon = (
-    <>
-      {outils(false)}
-      {aide && <PanneauAide fermer={() => setAide(false)} />}
-    </>
-  );
+  // Les outils : rejouer (en partie, quand il y a un coup à revoir et que
+  // rien ne bouge), cigales, musique, aide, maison (en partie).
+  const outils = (enPartie, grand) => {
+    const cl = "bi" + (grand ? " g" : "");
+    const t = grand ? 22 : 20;
+    return (
+      <div style={S.outils}>
+        {enPartie && game?.replay && !animating && !gel && (
+          <button className={cl} aria-label="Revoir le coup" title="Revoir le coup"
+                  onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}><Ico nom="rejouer" taille={t} /></button>
+        )}
+        <button className={cl} aria-label="Cigales" title="Cigales" onClick={basculerCigales}><Ico nom={cigales ? "son" : "muet"} taille={t} /></button>
+        <button className={cl + (ambiance ? "" : " off")} aria-label="Musique" title="Musique" onClick={basculerAmbiance}><Ico nom="note" taille={t} /></button>
+        <button className={cl} aria-label="Aide" title="Aide" onClick={() => setAide(true)}>?</button>
+        {enPartie && <button className={cl} aria-label="Accueil" title="Accueil" onClick={quitter}><Ico nom="maison" taille={t} /></button>}
+      </div>
+    );
+  };
 
   const restantes = t => game && game.mene
     ? game.players.filter(p => p.team === t).reduce((s, p) => s + (game.mene.left[p.id] || 0), 0)
     : 0;
+  const nomCourt = t => TEAM_NAMES[t].replace("Équipe ", "").toUpperCase();
+  const nomLong = t => TEAM_NAMES[t].toUpperCase();
 
-  const teamChip = t => (
-    <div key={t} style={{ ...S.chip, borderColor: TEAM_COLORS[t] }}>
-      <span style={{ ...S.dot, background: TEAM_COLORS[t] }} />
-      <span>{TEAM_NAMES[t]}</span>
-      {game.phase === "playing" && game.mene && <span style={S.chipSmall}>●{restantes(t)}</span>}
-      {(game.drinks?.[t] || 0) > 0 && <span style={S.chipSmall}>🍹{game.drinks[t]}</span>}
-      <strong style={{ marginLeft: "auto" }}>{game.scores[t]}</strong>
-    </div>
-  );
-
+  // ---- Accueil -----------------------------------------------------
   if (screen === "entry") {
     return (
       <div style={S.page}>
-        <div style={S.sun}>☀️</div>
-        <h1 style={S.h1}>Pétanque en ligne</h1>
-        <p style={S.tagline}>Sous les platanes, le pastis attend les perdants.</p>
-        <p style={S.sub}>Jusqu'à 9 joueurs à distance, chacun sur son appareil, sans compte ni installation. Le premier à {TARGET} points gagne, et une boule qui file au fond du terrain est morte.</p>
-        <div style={S.card}>
-          <label style={S.label}>Ton prénom</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...S.input, flex: 1, minWidth: 0 }} value={name} onChange={e => setName(e.target.value)} placeholder="Marius" />
-            <button style={S.sndBtn} onClick={() => setName(prenomAleatoire())} title="Un prénom d'ici au hasard">🎲</button>
-          </div>
-          <label style={S.label}>Code de la partie</label>
-          <input style={S.input} value={code} onChange={e => setCode(e.target.value)} placeholder="APERO2026" />
-          <button style={S.btn} disabled={busy} onClick={join}>Rejoindre ou créer la partie</button>
-          <button style={S.btnGhost} onClick={partager}>📤 Partager le lien de la partie</button>
-          <p style={S.hint}>Le premier arrivé crée la partie, les autres la rejoignent avec le lien ou le code.</p>
+        <style>{CSS_BASE}</style>
+        {aide && <PanneauAide fermer={() => setAide(false)} />}
+        <div style={S.enseigne}>
+          <h1 style={S.titre}>PÉTANQUE&nbsp;!</h1>
+          <div style={S.accroche}>LE JEU D'APÉRO — 9 JOUEURS · 13 POINTS · 1 LIEN</div>
         </div>
-        {boutonsSon}
-        {notice && <p style={S.notice}>{notice}</p>}
+        <div style={S.plaque}>
+          <label style={S.etiquette} htmlFor="nom">NOM DE JOUEUR</label>
+          <div style={S.rangee}>
+            <input id="nom" className="champ" value={name} onChange={e => setName(e.target.value)} placeholder="Fernand" />
+            <button className="bi g" aria-label="Nom au hasard" title="Nom au hasard" onClick={() => setName(prenomAleatoire())}><Ico nom="de" taille={22} /></button>
+          </div>
+          <label style={S.etiquette} htmlFor="code">CODE DE LA PARTIE</label>
+          <div style={S.rangee}>
+            <input id="code" className="champ" style={{ letterSpacing: 1 }} value={code} onChange={e => setCode(e.target.value)} placeholder="PLATANE66" />
+            <button className="bi g" aria-label="Code au hasard" title="Code au hasard" onClick={() => setCode(codeAleatoire())}><Ico nom="tourner" taille={22} /></button>
+          </div>
+          <button className="bp" style={{ marginTop: 6 }} disabled={busy} onClick={join}>REJOINDRE LA PARTIE</button>
+          <button className="bs" onClick={partager}><Ico nom="partage" taille={18} />PARTAGER LE LIEN</button>
+          {notice && <div style={S.ardoise}>{notice}</div>}
+        </div>
+        {outils(false, true)}
       </div>
     );
   }
 
-  if (!game) return <div style={S.page}><p style={S.sub}>Chargement…</p></div>;
+  if (!game) return <div style={S.page}><style>{CSS_BASE}</style><div style={S.ardoise}>Chargement…</div></div>;
 
+  // ---- Salon -------------------------------------------------------
   if (game.phase === "lobby") {
+    const compte = t => game.players.filter(p => p.team === t).length;
     return (
       <div style={S.page}>
-        <h1 style={S.h1}>Partie {code}</h1>
-        <p style={S.sub}>{game.players.length}/9 joueurs. Chacun choisit son équipe, puis l'hôte lance la partie.</p>
-        <button style={{ ...S.btnGhost, maxWidth: 360, width: "100%" }} onClick={partager}>📤 Partager le lien de la partie</button>
+        <style>{CSS_BASE}</style>
+        {aide && <PanneauAide fermer={() => setAide(false)} />}
+        <div style={S.enseigne}>
+          <h1 style={S.titrePetit}>PARTIE {code}</h1>
+          <div style={S.accroche}>{game.players.length}/9 JOUEURS · CHACUN CHOISIT SON ÉQUIPE</div>
+        </div>
+        <button className="bs" style={S.large} onClick={partager}><Ico nom="partage" taille={18} />PARTAGER LE LIEN</button>
         {TEAMS.map(t => (
-          <div key={t} style={{ ...S.teamBox, borderColor: TEAM_COLORS[t] }}>
-            <div style={S.teamHead}>
-              <span style={{ ...S.dot, background: TEAM_COLORS[t] }} />
-              <strong>{TEAM_NAMES[t]}</strong>
-              <div style={S.teamActions}>
-                {me && me.team !== t && game.players.filter(p => p.team === t).length < 3 && (
-                  <button style={S.miniBtn} onClick={() => pickTeam(t)}>Me placer ici</button>
+          <div key={t} style={S.plaqueEquipe}>
+            <div style={S.equipeTete}>
+              <span style={{ ...S.pastille, background: TEAM_COLORS[t] }} />
+              <span style={S.equipeNom}>{nomLong(t)}</span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                {me && me.team !== t && compte(t) < 3 && (
+                  <button className="bs petit" onClick={() => pickTeam(t)}>ME PLACER ICI</button>
                 )}
-                {isHost && game.players.length < 9 && game.players.filter(p => p.team === t).length < 3 && (
-                  <button style={S.miniBtn} onClick={() => ajouterBot(t)}>+ 🤖</button>
+                {isHost && game.players.length < 9 && compte(t) < 3 && (
+                  <button className="bi" aria-label="Ajouter un bot" title="Ajouter un bot" style={{ width: 36, height: 36 }}
+                          onClick={() => ajouterBot(t)}><Ico nom="robot" taille={18} /></button>
                 )}
               </div>
             </div>
-            <div style={S.names}>
-              {game.players.filter(p => p.team === t).map(p => (
-                <span key={p.id} style={S.nameTag}>
-                  {p.bot ? "🤖 " : ""}{p.name}{p.id === meId ? " (toi)" : ""}
-                  {p.bot && <span style={S.nivTag}>{NIVEAUX_BOT[p.niveau]?.nom ?? ""}</span>}
-                  {p.bot && isHost && (
-                    <button style={S.retirerBtn} onClick={() => retirerBot(p.id)} title="Retirer">×</button>
-                  )}
-                </span>
-              ))}
-            </div>
+            {compte(t) > 0 && (
+              <div style={S.puces}>
+                {game.players.filter(p => p.team === t).map(p => (
+                  <span key={p.id} className="puce">
+                    {p.bot && <Ico nom="robot" taille={14} couleur={CREME} />}
+                    {p.name}{p.id === meId ? " (toi)" : ""}
+                    {p.bot && <span style={{ opacity: 0.6, fontWeight: 500 }}>· {NIVEAUX_BOT[p.niveau]?.nom ?? ""}</span>}
+                    {p.bot && isHost && (
+                      <button className="x" aria-label="Retirer" title="Retirer" onClick={() => retirerBot(p.id)}><Ico nom="croix" taille={14} couleur={CREME} /></button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {isHost && (
-          <div style={S.card}>
-            <label style={S.label}>Boules par joueur</label>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div style={S.plaque}>
+            <label style={S.etiquette}>BOULES PAR JOUEUR</label>
+            <div style={S.rangee}>
               {[1, 2, 3].map(n => (
-                <button key={n} style={game.boulesEach === n ? S.btnSmallOn : S.btnSmall} onClick={() => setBoules(n)}>{n}</button>
+                <button key={n} className={game.boulesEach === n ? "bp" : "bs"} style={S.segment} onClick={() => setBoules(n)}>{n}</button>
               ))}
             </div>
-            <label style={S.label}>Niveau des bots ajoutés</label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <p style={S.note}>Équipes inégales ? Le total de boules par équipe est équilibré tout seul.</p>
+            <label style={S.etiquette}>NIVEAU DES BOTS</label>
+            <div style={S.rangee}>
               {ORDRE_BOTS.map(k => (
-                <button key={k} style={niveauBot === k ? S.btnSmallOn : S.btnSmall}
-                        onClick={() => setNiveauBot(k)}>{NIVEAUX_BOT[k].nom}</button>
+                <button key={k} className={niveauBot === k ? "bp" : "bs"} style={S.segment} onClick={() => setNiveauBot(k)}>{NIVEAUX_BOT[k].nom.toUpperCase()}</button>
               ))}
             </div>
-            <p style={S.hint}>{NIVEAUX_BOT[niveauBot].nom} : {NIVEAUX_BOT[niveauBot].sous}. Un bot joue tout seul, tu peux remplir les équipes et jouer en solo.</p>
-            <label style={S.label}>Tournées de pastis</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button style={!game.sansTournee ? S.btnSmallOn : S.btnSmall} onClick={() => setSansTournee(false)}>🍹 Avec</button>
-              <button style={game.sansTournee ? S.btnSmallOn : S.btnSmall} onClick={() => setSansTournee(true)}>Sans</button>
+            <p style={S.note}>Un bot joue tout seul — de quoi jouer en solo. Le détail est dans l'aide.</p>
+            <label style={S.etiquette}>TOURNÉES DE PASTIS</label>
+            <div style={S.rangee}>
+              <button className={!game.sansTournee ? "bp" : "bs"} style={S.segment} onClick={() => setSansTournee(false)}>AVEC</button>
+              <button className={game.sansTournee ? "bp" : "bs"} style={S.segment} onClick={() => setSansTournee(true)}>SANS</button>
             </div>
-            <p style={S.hint}>{game.sansTournee
-              ? "Partie sobre : ni tournée après une mène gagnée, ni ivresse. Le vin d'honneur reste à votre charge."
-              : "L'équipe qui gagne une mène offre une tournée ; chaque verre trouble un peu plus la vue."}</p>
-            <label style={S.label}>Terrain</label>
-            <p style={S.hint}>Équipes inégales ? Le total de boules par équipe est équilibré automatiquement.</p>
-            <div style={{ display: "flex", gap: 8 }}>
+            <label style={S.etiquette}>TERRAIN</label>
+            <div style={S.rangee}>
               {Object.entries(TERRAINS).map(([k, tt]) => (
-                <button key={k} style={(game.terrain || "classique") === k ? S.btnSmallOn : S.btnSmall} onClick={() => setTerrain(k)}>{tt.nom}</button>
+                <button key={k} className={(game.terrain || "classique") === k ? "bp" : "bs"} style={S.segment} onClick={() => setTerrain(k)}>{tt.nom.toUpperCase()}</button>
               ))}
             </div>
-            <button style={S.btn} onClick={start}>Lancer la partie</button>
+            <button className="bp" style={{ marginTop: 6 }} onClick={start}>LANCER LA PARTIE</button>
           </div>
         )}
         {!isHost && (
-          <p style={S.hint}>
-            Terrain : {terrainDe(game).nom}{game.sansTournee ? ", sans tournée" : ""}. En attente que l'hôte ({meneur?.name}) lance la partie…
-          </p>
+          <div style={{ ...S.ardoise, maxWidth: 390, width: "100%" }}>
+            Terrain {terrainDe(game).nom}{game.sansTournee ? ", sans tournée" : ""} — {meneur?.name ?? "l'hôte"} lance la partie…
+          </div>
         )}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={S.btnGhost} onClick={quitter}>⌂ Accueil</button>
-          {boutonsSon}
+        <div style={S.outils}>
+          <button className="bi g" aria-label="Accueil" title="Accueil" onClick={quitter}><Ico nom="maison" taille={22} /></button>
+          {outils(false, true)}
         </div>
-        {notice && <p style={S.notice}>{notice}</p>}
+        {notice && <div style={{ ...S.ardoise, maxWidth: 390, width: "100%" }}>{notice}</div>}
       </div>
     );
   }
 
+  // ---- Partie ------------------------------------------------------
   const turnPlayer = game.players.find(p => p.id === turnId);
   // Proposé à l'hôte seulement, et jamais pour le joueur en train de jouer
   const absentAProposer = isHost && game.phase === "playing"
     ? game.players.find(p => !p.bot && (game.absents?.[p.id] || 0) >= 3) : null;
   const pointLive = game.phase === "playing" && game.mene && game.mene.cochonnet && game.mene.boules.length
     ? scoreMene(game) : null;
+  const equipes = activeTeams(game);
 
-  // Le fronton du boulodrome : une colonne par équipe (score en chiffres
-  // lumineux, boules restantes, tournées, qui tient le point), et dessous
-  // la ligne de jeu — mène, joueur au tour, chronomètre — avec les outils.
-  const nomCourt = t => TEAM_NAMES[t].replace("Équipe ", "").toUpperCase();
-  const ligneTour = game.phase !== "playing" ? "Partie terminée"
-    : tourneeEnAttente ? `${nomCourt(game.tourneePending)} choisit…`
-    : gel && !gel.commit ? "résultat du lancer…"
-    : myTurn ? "À toi !"
-    : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"}`;
-  // Ce qui s'écrit sur le canvas plutôt qu'en rangées d'écran
-  const lr = game.lastResult;
-  hudRef.current = {
-    banniere: lr && game.phase !== "finished"
-      ? `${CRIS[lr.mene % CRIS.length]} Mène ${lr.mene} : ${TEAM_NAMES[lr.team]} marque ${lr.pts} point${lr.pts > 1 ? "s" : ""}.`
-      : null,
-    notice: notice || null,
-    indication: !peutLancer || curseurs ? null
-      : geste ? (geste.valide ? "Relâche pour lancer" : "Tire vers l'arrière…")
-      : cochToThrow ? "Tu ouvres la mène : touche le terrain et tire vers l'arrière"
-      : `👆 Touche le terrain et tire vers l'arrière${mode === "tir" ? " — la longueur donne la distance du tir" : ""}`,
+  // Le fronton : une colonne par équipe, un compteur central « MÈNE N »
+  // avec le chronomètre et qui joue — façon panneau de basket.
+  const ligneTour = game.phase !== "playing" ? "PARTIE FINIE"
+    : tourneeEnAttente ? "TOURNÉE…"
+    : gel && !gel.commit ? "RÉSULTAT…"
+    : animating ? "…"
+    : myTurn ? "À TOI !"
+    : (turnPlayer?.name ?? "…").toUpperCase();
+  const chrono = game.phase !== "playing" ? null
+    : tourneeEnAttente ? tourneeReste
+    : (!animating && !gel) ? resteTemps : null;
+  const NOMS_CLAIRS = { A: "#7cc9e8", B: "#e8a08e", C: "#e6c977" };
+  const colonne = t => {
+    const auTour = game.phase === "playing" && turnPlayer?.team === t;
+    const tient = pointLive && pointLive.team === t;
+    return (
+      <div key={t} style={{ ...S.frontonCol, background: auTour ? "rgba(242,236,220,0.09)" : "transparent" }}>
+        <div style={{ ...S.frontonNom, color: NOMS_CLAIRS[t] }}>
+          <span style={{ ...S.pastille, width: 8, height: 8, background: TEAM_COLORS[t] }} />{nomCourt(t)}
+        </div>
+        <div style={S.frontonScore}>{String(game.scores[t] || 0).padStart(2, "0")}</div>
+        <div style={S.frontonInfo}>
+          {game.mene && <span style={S.frontonItem}><Boule />{restantes(t)}</span>}
+          {(game.drinks?.[t] || 0) > 0 && <span style={S.frontonItem}><Verre />{game.drinks[t]}</span>}
+          {tient && <span style={S.frontonPoint}>+{pointLive.pts}</span>}
+        </div>
+      </div>
+    );
   };
-  const tableauAffichage = (
-    <div style={S.tableau}>
-      <div style={S.tableauCols}>
-        {activeTeams(game).map(t => {
-          const auTour = game.phase === "playing" && turnPlayer?.team === t;
-          const tient = pointLive && pointLive.team === t;
-          return (
-            <div key={t} style={{ ...S.tableauCol, borderTopColor: TEAM_COLORS[t],
-                                  background: auTour ? "rgba(255,255,255,0.07)" : "transparent" }}>
-              <div style={S.tableauNom}>
-                <span style={{ ...S.dot, width: 8, height: 8, background: TEAM_COLORS[t] }} />{nomCourt(t)}
-              </div>
-              <div style={S.tableauScore}>{String(game.scores[t] || 0).padStart(2, "0")}</div>
-              <div style={S.tableauInfo}>
-                {game.mene && <span>●{restantes(t)}</span>}
-                {(game.drinks?.[t] || 0) > 0 && <span>🍹{game.drinks[t]}</span>}
-                {tient && <span style={S.tableauPoint}>+{pointLive.pts}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={S.tableauBas}>
-        {game.mene && <span style={S.tableauMene}>M{game.mene.num}</span>}
-        <span style={S.tableauTour}>{ligneTour}</span>
-        {game.phase === "playing" && tourneeEnAttente && (
-          <span style={S.tableauChrono}>{tourneeReste}</span>
+  const centre = (
+    <div style={S.frontonCentre}>
+      <div style={S.frontonMene}>MÈNE</div>
+      <div style={S.frontonMeneNum}>{game.mene?.num ?? "–"}</div>
+      {chrono !== null && (
+        <div style={S.frontonChrono}>
+          <Ico nom="horloge" taille={13} couleur="#ffd84d" epaisseur={2.4} />
+          <span style={{ color: chrono <= 5 && !tourneeEnAttente ? "#ff8a6a" : "#ffd84d" }}>{chrono}</span>
+        </div>
+      )}
+      <div style={S.frontonTour}>{ligneTour}</div>
+    </div>
+  );
+  const fronton = equipes.length <= 2 ? (
+    <div style={S.fronton}>
+      {colonne(equipes[0])}
+      {centre}
+      {equipes[1] && colonne(equipes[1])}
+    </div>
+  ) : (
+    <div style={{ ...S.fronton, flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", gap: 8 }}>{equipes.map(colonne)}</div>
+      <div style={{ ...S.frontonCentre, flex: "none", flexDirection: "row", gap: 14, borderLeft: "none", borderRight: "none",
+                    borderTop: "1px solid rgba(242,236,220,0.35)", paddingTop: 4 }}>
+        <span style={S.frontonMene}>MÈNE <span style={{ fontSize: 18 }}>{game.mene?.num ?? "–"}</span></span>
+        {chrono !== null && (
+          <span style={S.frontonChrono}>
+            <Ico nom="horloge" taille={13} couleur="#ffd84d" epaisseur={2.4} />
+            <span style={{ color: chrono <= 5 && !tourneeEnAttente ? "#ff8a6a" : "#ffd84d" }}>{chrono}</span>
+          </span>
         )}
-        {game.phase === "playing" && !tourneeEnAttente && !animating && !gel && (
-          <span style={{ ...S.tableauChrono, color: resteTemps <= 5 ? "#ff7a5c" : "#ffd23f" }}>{resteTemps}</span>
-        )}
-        {outils(true)}
+        <span style={{ ...S.frontonTour, marginTop: 0 }}>{ligneTour}</span>
       </div>
+    </div>
+  );
+
+  // Les bandeaux « ardoise » du terrain : collés en bas (indication du
+  // geste, message passager) ou en haut (résultat de la mène)
+  const rappelGeste = peutLancer && !curseurs && lancersFaits < 2;
+  const texteBas = notice
+    || (geste ? (geste.valide ? "Relâche pour lancer" : "Tire vers l'arrière…") : null)
+    || (rappelGeste ? (cochToThrow ? "Tu ouvres la mène : touche le terrain et tire vers l'arrière"
+                                    : "Touche le terrain et tire vers l'arrière") : null)
+    || (tourneeEnAttente && !(me && game.tourneePending === me.team) ? `${TEAM_NAMES[game.tourneePending]} choisit à qui offrir la tournée…` : null);
+
+  const plaqueInfo = (texte, boutons) => (
+    <div style={S.plaqueInfo}>
+      <span style={S.plaqueInfoTexte}>{texte}</span>
+      {boutons}
     </div>
   );
 
   return (
     <div style={S.pageGame}>
-      <style>{CSS_IVRESSE}</style>
+      <style>{CSS_BASE}{CSS_IVRESSE}</style>
       {aide && <PanneauAide fermer={() => setAide(false)} />}
       {tourneeAnim && (
-        <div style={S.tourneeOverlay}>
-          <div style={S.tourneeGlasses}>
-            <span style={{ ...S.verre, animation: "monterVerre .6s ease-out both" }}>🍹</span>
-            <span style={{ ...S.verre, animation: "monterVerre .6s .18s ease-out both" }}>🍹</span>
-            <span style={{ ...S.verre, animation: "monterVerre .6s .36s ease-out both" }}>🍹</span>
+        <div style={S.voile}>
+          <div style={S.tourneeVerres}>
+            {[0, 0.18, 0.36].map((d, i) => (
+              <span key={i} style={{ display: "inline-block", animation: `monterVerre .6s ${d}s ease-out both` }}><Verre grand /></span>
+            ))}
           </div>
           <p style={{ ...S.tourneeTxt, animation: "trinquer .8s .55s both" }}>{tourneeAnim}</p>
         </div>
       )}
-      {tableauAffichage}
+      {fronton}
+      {outils(true)}
       {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
-        <div style={S.tourneeOverlay}>
-          <div style={S.tourneeCarte}>
-            <div style={S.verre}>🍹</div>
-            <h2 style={S.aideTitre}>Mène gagnée !</h2>
-            <p style={S.tourneeQuestion}>À qui offrez-vous la tournée ?</p>
-            {activeTeams(game).filter(t => t !== me.team).map(t => (
-              <button key={t} style={{ ...S.btn, marginTop: 0, background: TEAM_COLORS[t], color: "#fff" }}
-                      onClick={() => offrirTournee(t)}>{TEAM_NAMES[t]}</button>
+        <div style={S.voile}>
+          <div style={S.plaquePopin}>
+            <Verre grand />
+            <div style={S.popinTitre}>MÈNE GAGNÉE&nbsp;!</div>
+            <div style={S.popinSous}>La tournée est pour…</div>
+            {equipes.filter(t => t !== me.team).map(t => (
+              <button key={t} className="bp" style={{ background: TEAM_COLORS[t], color: t === "C" ? NUIT : CREME, letterSpacing: 2, fontSize: 16 }}
+                      onClick={() => offrirTournee(t)}>{nomLong(t)}</button>
             ))}
-            <button style={S.btnGhost} onClick={() => offrirTournee(null)}>Passer</button>
-            <p style={S.hint}>Sans réponse, la tournée passe dans {tourneeReste} s.</p>
+            <button className="bs creux" style={{ letterSpacing: 2 }} onClick={() => offrirTournee(null)}>PASSER · {tourneeReste}</button>
           </div>
         </div>
       )}
-      {!me && game.phase !== "finished" && (
-        <div style={S.tourneeBar}>
-          <span style={S.tourneeQ}>👀 Tu regardes la partie.</span>
-          {placeLibre(game) && (
-            <button style={S.tourneeBtn} onClick={entrerEnJeu}>Entrer dans la partie</button>
-          )}
-        </div>
-      )}
-      {absentAProposer && (
-        <div style={S.tourneeBar}>
-          <span style={S.tourneeQ}>
-            {absentAProposer.id === meId
-              ? "Tu as laissé filer 3 lancers — un bot peut prendre la suite."
-              : `${absentAProposer.name} a laissé filer 3 lancers.`}
-          </span>
-          <button style={S.tourneeBtn} onClick={() => remplacerParBot(absentAProposer.id)}>
-            {absentAProposer.id === meId ? "Qu'un bot joue pour moi" : "Le remplacer par un bot"}
-          </button>
-          <button style={S.tourneeBtn} onClick={() => laisserJoueur(absentAProposer.id)}>
-            {absentAProposer.id === meId ? "Non, je joue" : "L'attendre"}
-          </button>
-        </div>
-      )}
-      {me?.bot && me.remplace && (
-        <div style={S.tourneeBar}>
-          <span style={S.tourneeQ}>🤖 Un bot joue tes boules pendant ton absence.</span>
-          <button style={S.tourneeBtn} onClick={reprendreMain}>Je suis là, je reprends</button>
-        </div>
-      )}
+      {!me && game.phase !== "finished" && plaqueInfo(
+        <><Ico nom="oeil" taille={16} /> Tu regardes la partie.</>,
+        placeLibre(game) && <button className="bs petit" onClick={entrerEnJeu}>ENTRER</button>)}
+      {absentAProposer && plaqueInfo(
+        absentAProposer.id === meId ? "Tu as laissé filer 3 lancers — un bot peut prendre la suite."
+                                    : `${absentAProposer.name} a laissé filer 3 lancers.`,
+        <>
+          <button className="bs petit" onClick={() => remplacerParBot(absentAProposer.id)}><Ico nom="robot" taille={14} />{absentAProposer.id === meId ? "UN BOT POUR MOI" : "LE REMPLACER"}</button>
+          <button className="bs petit creux" onClick={() => laisserJoueur(absentAProposer.id)}>{absentAProposer.id === meId ? "JE JOUE" : "L'ATTENDRE"}</button>
+        </>)}
+      {me?.bot && me.remplace && plaqueInfo(
+        <><Ico nom="robot" taille={16} /> Un bot joue tes boules pendant ton absence.</>,
+        <button className="bs petit" onClick={reprendreMain}>JE REPRENDS</button>)}
       {game.phase === "finished" ? (
         <>
           <style>{CSS_FETE}</style>
           <Confettis graine={game.winner + ":" + (game.rev || 0)} />
-          <div style={{ ...S.card, alignItems: "center", textAlign: "center", position: "relative", zIndex: 2 }}>
-            <div style={S.cochDore} title="Le cochonnet d'or" />
-            <h1 style={{ ...S.h1, color: TEAM_COLORS[game.winner] }}>{TEAM_NAMES[game.winner]} gagne !</h1>
-            <p style={S.sub}>Score final : {activeTeams(game).map(t => `${TEAM_NAMES[t]} ${game.scores[t]}`).join(" — ")}</p>
-            {activeTeams(game).filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
+          <div style={{ ...S.plaquePopin, zIndex: 2, marginTop: 10 }}>
+            <Trophee />
+            <div style={{ ...S.popinTitre, color: TEAM_COLORS[game.winner] }}>{nomLong(game.winner)}</div>
+            <div style={{ ...S.popinTitre, fontSize: 21 }}>GAGNE&nbsp;!</div>
+            <div style={S.popinSous}>{equipes.map(t => `${nomCourt(t)} ${game.scores[t]}`).join("  —  ")}</div>
+            {equipes.filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
               <div key={t} style={S.fanny}>
                 <div style={S.fannyTampon}>FANNY !</div>
-                <p style={S.sub}>{TEAM_NAMES[t]} finit à zéro : {game.sansTournee ? "il faut embrasser Fanny." : "la tournée de pastis est pour eux."}</p>
+                <div style={S.popinSous}>{TEAM_NAMES[t]} finit à zéro : {game.sansTournee ? "il faut embrasser Fanny." : "la tournée de pastis est pour eux."}</div>
               </div>
             ))}
-            {isHost && <button style={S.btn} onClick={resetGame}>Nouvelle partie</button>}
+            {isHost && <button className="bp" style={{ marginTop: 4 }} onClick={resetGame}>NOUVELLE PARTIE</button>}
           </div>
         </>
       ) : (
         <>
           <div style={{
-            ...S.canvasWrap,
+            ...S.cadreTerrain,
             ...(ivresseNiveau ? {
               animation: `tanguer ${Math.max(2.2, 5.5 - ivresseNiveau * 0.6)}s ease-in-out infinite`,
               filter: `blur(${Math.min(2.2, ivresseNiveau * 0.35)}px) sepia(${Math.min(0.5, ivresseNiveau * 0.08)}) saturate(${1 + ivresseNiveau * 0.06})`,
@@ -2542,32 +2644,34 @@ export default function Petanque() {
             <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas}
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
+            {banniere && <div style={S.ardoiseHaut}>{banniere}</div>}
+            {texteBas && <div style={S.ardoiseBas}>{texteBas}</div>}
           </div>
           {peutLancer && (curseurs || !cochToThrow) && (
-            <div style={S.card}>
+            <div style={S.commandes}>
               {!cochToThrow && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button style={mode === "point" ? S.btnSmallOn : S.btnSmall} onClick={() => setMode("point")}>Pointer</button>
-                  <button style={mode === "tir" ? S.btnSmallOn : S.btnSmall} onClick={() => setMode("tir")}>Tirer</button>
+                <div style={S.rangee}>
+                  <button className={mode === "point" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17 }} onClick={() => setMode("point")}>POINTER</button>
+                  <button className={mode === "tir" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17 }} onClick={() => setMode("tir")}>TIRER</button>
                   {!curseurs && (
-                    <button style={S.btnGhost} onClick={() => basculerCurseurs(true)} title="Préférer les curseurs">⚙</button>
+                    <button className="bs" style={{ width: 50, padding: 0 }} aria-label="Options" title="Préférer les curseurs" onClick={() => basculerCurseurs(true)}><Ico nom="engrenage" /></button>
                   )}
                 </div>
               )}
               {curseurs && (
-                <>
-                  {cochToThrow && <label style={S.label}>Tu ouvres la mène : lance d'abord le cochonnet.</label>}
-                  <label style={S.label}>Direction</label>
+                <div style={S.plaque}>
+                  {cochToThrow && <label style={S.etiquette}>TU OUVRES LA MÈNE : LANCE LE COCHONNET</label>}
+                  <label style={S.etiquette}>DIRECTION</label>
                   <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
-                  <label style={S.label}>{!cochToThrow && mode === "tir" ? "Distance de tir" : "Force"}</label>
+                  <label style={S.etiquette}>{!cochToThrow && mode === "tir" ? "DISTANCE DE TIR" : "FORCE"}</label>
                   <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button style={{ ...S.btn, flex: 1, marginTop: 0 }} onClick={() => throwBoule()}>
-                      {cochToThrow ? "Lancer le cochonnet" : mode === "tir" ? "Tirer !" : "Lancer la boule"}
+                  <div style={S.rangee}>
+                    <button className="bp" style={{ flex: 1 }} onClick={() => throwBoule()}>
+                      {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
                     </button>
-                    <button style={S.btnGhost} onClick={() => basculerCurseurs(false)} title="Lancer au doigt">👆</button>
+                    <button className="bs" style={{ width: 50, padding: 0 }} aria-label="Lancer au doigt" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" /></button>
                   </div>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -2581,189 +2685,132 @@ export default function Petanque() {
 
 const styles = {
   page: {
-    height: "100dvh", overflowY: "auto", background: "linear-gradient(180deg, #27607e 0%, #333d24 45%, #232919 100%)", color: "#f2eddd",
-    fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif",
+    minHeight: "100dvh", overflowY: "auto", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
+    color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "center",
-    padding: "16px 12px 24px", boxSizing: "border-box", gap: 12,
+    padding: "24px 20px", boxSizing: "border-box", gap: 18,
   },
   // Écran de jeu : jamais de défilement, le terrain prend toute la place
-  // que les bandeaux lui laissent
+  // que le fronton et les boutons lui laissent
   pageGame: {
-    height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 45%, #232919 100%)", color: "#f2eddd",
-    fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif",
-    display: "flex", flexDirection: "column", alignItems: "center",
-    padding: "6px 8px", boxSizing: "border-box", gap: 6,
+    height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
+    color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
+    display: "flex", flexDirection: "column", alignItems: "stretch",
+    padding: 8, boxSizing: "border-box", gap: 8,
+    maxWidth: 520, margin: "0 auto", // sur grand écran, le jeu reste une colonne
   },
-  canvasWrap: {
-    flex: 1, minHeight: 0, width: "100%",
-    display: "flex", alignItems: "center", justifyContent: "center",
+  enseigne: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 8, textAlign: "center" },
+  titre: {
+    margin: 0, fontFamily: "'Alfa Slab One', serif", fontSize: 46, lineHeight: 1, color: CREME,
+    textShadow: "3px 3px 0 rgba(16, 26, 16, 0.45)", letterSpacing: 1, fontWeight: 400,
   },
-  h1: { fontFamily: "Georgia, serif", fontSize: 26, margin: "4px 0", fontWeight: 600 },
-  sun: { fontSize: 30, lineHeight: 1, marginBottom: -6 },
-  tagline: { fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 14, color: "#8fd4f0", margin: 0 },
-  sub: { fontSize: 14, lineHeight: 1.5, opacity: 0.85, maxWidth: 360, textAlign: "center", margin: 0 },
-  card: {
-    background: "#333b28", borderRadius: 10, padding: 10, width: "100%",
-    maxWidth: 380, display: "flex", flexDirection: "column", gap: 6, boxSizing: "border-box",
+  titrePetit: {
+    margin: 0, fontFamily: "'Alfa Slab One', serif", fontSize: 30, lineHeight: 1.1, color: CREME,
+    textShadow: "3px 3px 0 rgba(16, 26, 16, 0.45)", letterSpacing: 1, fontWeight: 400,
   },
-  label: { fontSize: 13, opacity: 0.8 },
-  input: {
-    padding: "10px 12px", borderRadius: 8, border: "1px solid #4a5438",
-    background: "#242a1a", color: "#f2eddd", fontSize: 16, outline: "none",
+  accroche: { fontSize: 12, fontWeight: 600, letterSpacing: 2.5, color: "#8fd4f0" },
+  // La plaque émaillée : crème, double liseré bleu nuit, ombre franche
+  plaque: {
+    width: "100%", maxWidth: 390, boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `3px solid ${NUIT}`, borderRadius: 6,
+    boxShadow: `0 4px 0 rgba(0, 0, 0, 0.35), inset 0 0 0 3px ${CREME}, inset 0 0 0 4px ${NUIT}`,
+    padding: "20px 16px", display: "flex", flexDirection: "column", gap: 12,
   },
-  // Toutes les zones tactiles font au moins 44 px de haut
-  btn: {
-    marginTop: 4, padding: "10px 16px", minHeight: 44, borderRadius: 8, border: "none",
-    background: "#f6c324", color: "#26200c", fontSize: 16, fontWeight: 600, cursor: "pointer",
+  plaquePopin: {
+    width: "100%", maxWidth: 330, boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `3px solid ${NUIT}`, borderRadius: 8,
+    boxShadow: `0 5px 0 rgba(0, 0, 0, 0.45), inset 0 0 0 4px ${CREME}, inset 0 0 0 6px ${NUIT}`,
+    padding: "26px 22px 22px", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center",
   },
-  btnGhost: {
-    padding: "10px 16px", minHeight: 44, borderRadius: 8, border: "1px solid #4a5438",
-    background: "transparent", color: "#f2eddd", fontSize: 14, cursor: "pointer",
+  plaqueEquipe: {
+    width: "100%", maxWidth: 390, boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `2px solid ${NUIT}`, borderRadius: 6, boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)",
+    padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8,
   },
-  btnSmall: {
-    padding: "8px 18px", minHeight: 44, flex: 1, borderRadius: 8, border: "1px solid #4a5438",
-    background: "transparent", color: "#f2eddd", fontSize: 15, cursor: "pointer",
+  plaqueInfo: {
+    width: "100%", boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `2px solid ${NUIT}`, borderRadius: 4, boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)",
+    padding: "6px 10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
   },
-  btnSmallOn: {
-    padding: "8px 18px", minHeight: 44, flex: 1, borderRadius: 8, border: "1px solid #f6c324",
-    background: "#f6c324", color: "#26200c", fontSize: 15, fontWeight: 600, cursor: "pointer",
+  plaqueInfoTexte: { flex: 1, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 140 },
+  plaqueTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, lineHeight: 1.15, margin: 0, color: NUIT, textAlign: "center", fontWeight: 400 },
+  popinTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 25, lineHeight: 1.1, color: NUIT, fontWeight: 400 },
+  popinSous: { fontSize: 15, fontWeight: 500, letterSpacing: 0.5, color: NUIT, marginTop: -4 },
+  etiquette: { fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: NUIT },
+  note: { fontSize: 12, lineHeight: 1.4, margin: "-4px 0 0", color: NUIT, opacity: 0.75, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
+  rangee: { display: "flex", gap: 8, alignItems: "stretch" },
+  segment: { flex: 1, padding: "10px 6px", fontSize: 15, letterSpacing: 1, minHeight: 46 },
+  large: { width: "100%", maxWidth: 390, boxSizing: "border-box" },
+  outils: { display: "flex", justifyContent: "center", gap: 8 },
+  pastille: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0 },
+  equipeTete: { display: "flex", alignItems: "center", gap: 8 },
+  equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
+  puces: { display: "flex", flexWrap: "wrap", gap: 6 },
+  // L'ardoise : bande opaque, texte crème, une ligne
+  ardoise: {
+    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
+    padding: "7px 12px", textAlign: "center", borderRadius: 4, boxSizing: "border-box",
   },
-  miniBtn: {
-    padding: "6px 12px", minHeight: 40, borderRadius: 6, border: "1px solid #4a5438",
-    background: "transparent", color: "#f2eddd", fontSize: 12, cursor: "pointer",
+  ardoiseBas: {
+    position: "absolute", left: 0, right: 0, bottom: 0, background: ARDOISE, color: CREME,
+    fontSize: 12, fontWeight: 500, letterSpacing: 0.5, padding: "7px 12px", textAlign: "center",
+    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
-  sndBtn: {
-    width: 40, height: 44, borderRadius: 8, border: "1px solid #4a5438", padding: 0,
-    background: "#333b28", color: "#f2eddd", fontSize: 16, cursor: "pointer", flexShrink: 0,
+  ardoiseHaut: {
+    position: "absolute", left: 0, right: 0, top: 0, background: ARDOISE, color: CREME,
+    fontSize: 12, fontWeight: 500, letterSpacing: 0.5, padding: "7px 12px", textAlign: "center",
+    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
-  hint: { fontSize: 12, opacity: 0.65, lineHeight: 1.45, margin: 0 },
-  notice: { fontSize: 12, color: "#f0b23e", maxWidth: 380, textAlign: "center", margin: 0 },
+  // Le terrain : pleine largeur, fin cadre bois ; les bandeaux s'y collent
+  cadreTerrain: {
+    position: "relative", flex: 1, minHeight: 0, width: "100%", boxSizing: "border-box",
+    border: "6px solid #8a6b43", borderRadius: 4, overflow: "hidden",
+    // ciel puis sable, à la proportion de la bande de décor : les marges
+    // du canvas, quand la hauteur le contraint, se fondent dans la scène
+    background: `linear-gradient(180deg, #cfe6ee 0, #dcc191 ${(100 * SKY_H / CANVAS_H).toFixed(1)}%, #d8c49a ${(100 * SKY_H / CANVAS_H).toFixed(1)}%, #d8c49a 100%)`,
+    display: "flex", justifyContent: "center", alignItems: "flex-start",
+  },
   canvas: {
-    borderRadius: 10, boxShadow: "0 4px 18px rgba(0,0,0,0.35)",
-    maxWidth: "100%", maxHeight: "100%", touchAction: "none",
+    display: "block", height: "100%", maxWidth: "100%", touchAction: "none",
     userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
-  scoreRow: { display: "flex", gap: 8, width: "100%", maxWidth: 360 },
-  tableau: {
-    width: "100%", maxWidth: 380, boxSizing: "border-box",
-    background: "linear-gradient(180deg, #1c2114 0%, #141810 100%)",
-    border: "1px solid #3d462e", borderRadius: 10, padding: "6px 8px 5px",
-    boxShadow: "inset 0 0 22px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3)",
+  commandes: { display: "flex", flexDirection: "column", gap: 8 },
+  // Le fronton du boulodrome
+  fronton: {
+    width: "100%", boxSizing: "border-box", background: NUIT, border: "2px solid #10222f", borderRadius: 6,
+    boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(242, 236, 220, 0.35)",
+    padding: "10px 12px 8px", display: "flex", alignItems: "stretch", gap: 8,
   },
-  tableauCols: { display: "flex", gap: 6, alignItems: "stretch" },
-  tableauCol: {
-    flex: 1, minWidth: 0, borderTop: "3px solid", borderRadius: 4,
-    padding: "3px 4px 2px", textAlign: "center",
+  frontonCol: { flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderRadius: 4, padding: "2px 0" },
+  frontonNom: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, letterSpacing: 2.5, whiteSpace: "nowrap" },
+  frontonScore: { fontSize: 42, lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 12px rgba(255, 216, 77, 0.55)" },
+  frontonInfo: { display: "flex", alignItems: "center", gap: 10, color: CREME, fontSize: 13, fontWeight: 600, minHeight: 16 },
+  frontonItem: { display: "flex", alignItems: "center", gap: 3 },
+  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 5px", fontWeight: 700, fontSize: 12 },
+  frontonCentre: {
+    flex: "0 0 84px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+    borderLeft: "1px solid rgba(242, 236, 220, 0.35)", borderRight: "1px solid rgba(242, 236, 220, 0.35)",
   },
-  tableauNom: {
-    fontSize: 10, letterSpacing: 1.2, opacity: 0.8, whiteSpace: "nowrap",
-    display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-  },
-  tableauScore: {
-    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 28, fontWeight: 700,
-    lineHeight: 1.05, letterSpacing: 2, color: "#ffd23f",
-    textShadow: "0 0 10px rgba(255,210,63,0.75), 0 0 2px rgba(255,210,63,0.9)",
-  },
-  tableauInfo: {
-    fontSize: 11, minHeight: 15, display: "flex", justifyContent: "center", gap: 6,
-    color: "#f2eddd", opacity: 0.92, whiteSpace: "nowrap",
-  },
-  tableauPoint: {
-    background: "#f6c324", color: "#26200c", borderRadius: 4, padding: "0 4px", fontWeight: 700,
-  },
-  tableauBas: {
-    display: "flex", alignItems: "center", gap: 8, marginTop: 5, paddingTop: 5,
-    borderTop: "1px solid #2f3724", fontSize: 13, minHeight: 36,
-  },
-  tableauMene: { opacity: 0.55, fontSize: 11, fontWeight: 700, letterSpacing: 1 },
-  tableauTour: { flex: 1, fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  tableauChrono: {
-    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 20, fontWeight: 700,
-    minWidth: 30, textAlign: "right", textShadow: "0 0 8px rgba(255,210,63,0.6)",
-  },
-  chip: {
-    flex: 1, display: "flex", alignItems: "center", gap: 4,
-    border: "1.5px solid", borderRadius: 8, padding: "6px 6px",
-    fontSize: 11, background: "#333b28",
-  },
-  chipSmall: { fontSize: 10, opacity: 0.9 },
-  dot: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0 },
-  teamBox: {
-    width: "100%", maxWidth: 360, border: "1.5px solid", borderRadius: 10,
-    padding: 12, background: "#333b28", boxSizing: "border-box",
-  },
-  teamHead: { display: "flex", alignItems: "center", gap: 8 },
-  names: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 },
-  nameTag: {
-    fontSize: 13, background: "#242a1a", borderRadius: 6, padding: "4px 8px",
-    display: "inline-flex", alignItems: "center", gap: 6,
-  },
-  nivTag: { fontSize: 10, opacity: 0.6 },
-  retirerBtn: {
-    border: "none", background: "transparent", color: "#f0b23e",
-    fontSize: 18, lineHeight: 1, padding: "0 6px", minWidth: 36, minHeight: 36, cursor: "pointer",
-  },
-  teamActions: { marginLeft: "auto", display: "flex", gap: 6 },
-  turn: { fontSize: 14, fontWeight: 600, margin: 0, textAlign: "center" },
-  pointLive: { fontSize: 12, opacity: 0.85, margin: 0, textAlign: "center" },
-  banner: {
-    fontSize: 12, background: "#3d462e", borderRadius: 8, padding: "5px 10px",
-    maxWidth: 380, margin: 0, textAlign: "center",
-  },
-  tourneeBar: {
-    display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
-    background: "#3d462e", borderRadius: 8, padding: "6px 8px",
-    width: "100%", maxWidth: 380, boxSizing: "border-box",
-  },
-  tourneeQ: { fontSize: 12, fontWeight: 600 },
-  tourneeBtn: {
-    padding: "6px 12px", minHeight: 44, borderRadius: 6, border: "1px solid #4a5438",
-    background: "#242a1a", color: "#f2eddd", fontSize: 12, cursor: "pointer",
-  },
-  tourneeOverlay: {
-    position: "fixed", inset: 0, zIndex: 50, background: "rgba(22, 27, 14, 0.85)",
+  frontonMene: { fontSize: 10, fontWeight: 600, letterSpacing: 3, color: CREME },
+  frontonMeneNum: { fontSize: 26, lineHeight: 1, fontWeight: 700, color: CREME },
+  frontonChrono: { display: "flex", alignItems: "center", gap: 4, marginTop: 2, fontSize: 17, fontWeight: 700 },
+  frontonTour: { fontSize: 10, fontWeight: 600, letterSpacing: 1.5, color: CREME, opacity: 0.9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 84 },
+  // Voile sombre des pop-ins
+  voile: {
+    position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18,
+    padding: 20, boxSizing: "border-box", overflowY: "auto",
   },
-  tourneeGlasses: { display: "flex", gap: 14 },
-  tourneeCarte: {
-    background: "#333b28", border: "1px solid #4a5438", borderRadius: 12, padding: 18,
-    width: "100%", maxWidth: 340, boxSizing: "border-box", display: "flex",
-    flexDirection: "column", gap: 10, alignItems: "stretch", textAlign: "center",
-  },
-  tourneeQuestion: { fontSize: 15, margin: 0 },
-  verre: { fontSize: 52 },
-  tourneeTxt: {
-    fontFamily: "Georgia, serif", fontSize: 19, color: "#f6c324",
-    textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.4,
-  },
+  tourneeVerres: { display: "flex", gap: 14 },
+  tourneeTxt: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, color: PASTIS, textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.3, fontWeight: 400 },
   range: { width: "100%", height: 36 },
   confettis: { position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 1 },
-  cochDore: {
-    width: 64, height: 64, borderRadius: "50%",
-    background: "radial-gradient(circle at 35% 30%, #fff6c8 0%, #ffd23f 30%, #c98a12 75%, #6b4a08 100%)",
-    boxShadow: "0 0 24px rgba(255,210,63,0.75), 0 6px 14px rgba(0,0,0,0.4)",
-    animation: "dore 1s cubic-bezier(.2,1.4,.4,1) both",
-  },
-  fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
+  fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
   fannyTampon: {
-    fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 30, letterSpacing: 3, color: "#e0432b",
-    border: "4px solid #e0432b", borderRadius: 8, padding: "2px 14px",
+    fontFamily: "'Alfa Slab One', serif", fontSize: 30, letterSpacing: 3, color: "#bd4f3a", fontWeight: 400,
+    border: "4px solid #bd4f3a", borderRadius: 6, padding: "2px 14px",
     animation: "tampon .7s .5s cubic-bezier(.2,1.2,.4,1) both",
   },
-
-  aideFond: {
-    position: "fixed", inset: 0, zIndex: 60, background: "rgba(22, 27, 14, 0.88)",
-    overflowY: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center",
-    padding: "16px 12px", boxSizing: "border-box",
-  },
-  aideCarte: {
-    background: "#333b28", borderRadius: 12, padding: 16, width: "100%", maxWidth: 400,
-    display: "flex", flexDirection: "column", gap: 10, boxSizing: "border-box",
-    border: "1px solid #4a5438",
-  },
-  aideTitre: {
-    fontFamily: "Georgia, serif", fontSize: 21, margin: 0, color: "#f6c324", textAlign: "center",
-  },
-  aideTitre2: { fontSize: 14, margin: "0 0 2px", color: "#8fd4f0" },
-  aideTexte: { fontSize: 13, lineHeight: 1.5, margin: 0, opacity: 0.9 },
+  aideTitre2: { fontSize: 13, fontWeight: 700, letterSpacing: 1.5, margin: "0 0 2px", color: NUIT, textTransform: "uppercase" },
+  aideTexte: { fontSize: 13, lineHeight: 1.5, margin: 0, color: NUIT, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
 };

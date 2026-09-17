@@ -33,3 +33,8 @@ npx esbuild tests/portees.js --bundle --platform=node --alias:react=./tests/reac
 ```
 
 Tolérance : ±3 % sur les portées. Le script sort en erreur au premier écart.
+
+`tests/carreau.js` mesure, pour une boule cible posée à différentes
+distances, la plage de force (donc de longueur de geste) qui la déloge :
+c'est la tolérance du carreau. Même commande, en remplaçant `portees` par
+`carreau`.
