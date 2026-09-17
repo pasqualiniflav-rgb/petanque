@@ -2685,7 +2685,9 @@ export default function Petanque() {
 
 const styles = {
   page: {
-    minHeight: "100dvh", overflowY: "auto", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
+    // Le body ne défile pas (index.html) : c'est cet écran qui défile lui-même,
+    // il lui faut donc une hauteur fixe, pas un minimum
+    height: "100dvh", overflowY: "auto", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
     color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "center",
     padding: "24px 20px", boxSizing: "border-box", gap: 18,
