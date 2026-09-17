@@ -22,7 +22,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | 5 | **Bot remplaçant** | ~~Après 3 timeouts consécutifs d'un joueur, proposition de le remplacer par un bot~~ ✅ Fait (il garde son nom et ses boules, et reprend la main quand il revient) | S | 2 |
 | 6 | **Écran d'aide** | ~~Règles + commandes en une page (les nouveaux arrivent sans rien connaître)~~ ✅ Fait — bouton « ? » présent sur les trois écrans | S | — |
 | 7 | **Reprise de partie** | ~~Rejoindre en cours de partie proprement~~ ✅ Fait : on entre dans une équipe engagée et on reçoit ses boules à la mène suivante ; spectateur seulement si toutes les places sont prises | M | — |
-| 8 | **QA multi-supports** | Passe complète PC (Chrome/Firefox/Safari/Edge) + mobiles, corrections | M | — |
+| 8 | **QA multi-supports** | ~~Passe complète PC + mobiles, corrections~~ ✅ Fermé par le sprint mobile ci-dessous (retours de la partie test, 14 points traités) | M | — |
 
 ## 📱 Sprint mobile — retours de la partie test *(item 8)*
 
@@ -41,7 +41,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C11 | **Accès** | ~~🎲 prénom provençal, code auto, « Partager le lien » (?partie=CODE)~~ ✅ Web Share, sinon presse-papiers, sinon lien affiché ; le lien pré-remplit le code | ✅ |
 | D12 | **Pointé avec portée** | ~~La boule vole 40-60 % puis roule ; recalibrage des deux terrains, tests numériques~~ ✅ 50 % en vol (elle passe par-dessus les autres), portées conservées à ±1,3 % ; banc `tests/portees.js` documenté dans BUILD.md | ✅ |
 | D13 | **Cochonnet** | ~~Calibration propre, un peu plus vif que les boules~~ ✅ 40 % en vol, +10 % de portée à force égale (constantes volCoch / cochVif par terrain, couvertes par le banc) | ✅ |
-| D14 | **Fin de partie** | Bonus : confettis, cochonnet doré, rappel de la Fanny | ⬜ |
+| D14 | **Fin de partie** | ~~Bonus : confettis, cochonnet doré, rappel de la Fanny~~ ✅ Confettis aux couleurs des équipes, cochonnet d'or, tampon FANNY ! et sa phrase (variante sobre en mode sans tournée) | ✅ |
 
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
@@ -87,6 +87,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | 27 | **Publicité directe** | Régie (rewarded ads : une pub pour rejouer/bonus) une fois le trafic établi | M | 25, 26 |
 | 28 | **Pastis Club 🍹** | Abonnement premium : sans pub, stats avancées, terrains exclusifs, cosmétiques — le vrai moteur de revenus (modèle chess.com : ~88 % du CA en abonnements) | L | 19, 25 |
 | 29 | **Encaisser** | Rattacher les revenus au statut d'indépendant — **à valider avec le comptable** | S | Comptable |
+| 34 | **i18n : version anglaise** | Textes du jeu, de l'aide et du salon en anglais (sélection par la langue du navigateur) — prérequis des portails de jeux | M | 26 |
 
 ---
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 // ------------------------------------------------------------------
 // Pétanque en ligne — jusqu'à 9 joueurs (3 équipes), temps réel.
@@ -1401,6 +1401,47 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
 
 // ---------- Animations CSS ----------------------------------------
 
+// Fin de partie : confettis, cochonnet doré, tampon Fanny
+const CSS_FETE = `
+@keyframes confetti {
+  0% { transform: translateY(-12vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(105vh) rotate(720deg); opacity: 0.85; }
+}
+@keyframes dore {
+  0% { transform: scale(0.2) rotate(-30deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(8deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes tampon {
+  0% { transform: scale(2.4) rotate(-18deg); opacity: 0; }
+  70% { transform: scale(0.95) rotate(-12deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-12deg); opacity: 1; }
+}`;
+
+function Confettis({ graine }) {
+  // Un jet de confettis aux couleurs des équipes et du pastis ; l'aléa
+  // ne sert qu'à la fête, jamais au jeu.
+  const pieces = React.useMemo(() => {
+    const couleurs = ["#f6c324", "#2ba3d4", "#bd4f3a", "#c9a02e", "#8fd4f0", "#f2eddd"];
+    return Array.from({ length: 48 }, (_, i) => ({
+      left: Math.random() * 100, delai: Math.random() * 2.5, duree: 3 + Math.random() * 2.5,
+      taille: 6 + Math.random() * 8, couleur: couleurs[i % couleurs.length],
+      rond: Math.random() > 0.5,
+    }));
+  }, [graine]);
+  return (
+    <div style={styles.confettis} aria-hidden="true">
+      {pieces.map((p, i) => (
+        <span key={i} style={{
+          position: "absolute", top: 0, left: `${p.left}%`, width: p.taille, height: p.taille * (p.rond ? 1 : 0.5),
+          background: p.couleur, borderRadius: p.rond ? "50%" : 2,
+          animation: `confetti ${p.duree}s ${p.delai}s linear infinite`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
 const CSS_IVRESSE = `
 @keyframes tanguer {
   0% { transform: rotate(-0.7deg) translateX(-3px); }
@@ -2473,14 +2514,22 @@ export default function Petanque() {
         </div>
       )}
       {game.phase === "finished" ? (
-        <div style={S.card}>
-          <h1 style={S.h1}>{TEAM_NAMES[game.winner]} gagne !</h1>
-          <p style={S.sub}>Score final : {activeTeams(game).map(t => `${TEAM_NAMES[t]} ${game.scores[t]}`).join(" — ")}</p>
-          {activeTeams(game).filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
-            <p key={t} style={S.sub}>{TEAM_NAMES[t]} est Fanny !{game.sansTournee ? "" : " La tournée de pastis est pour eux."}</p>
-          ))}
-          {isHost && <button style={S.btn} onClick={resetGame}>Nouvelle partie</button>}
-        </div>
+        <>
+          <style>{CSS_FETE}</style>
+          <Confettis graine={game.winner + ":" + (game.rev || 0)} />
+          <div style={{ ...S.card, alignItems: "center", textAlign: "center", position: "relative", zIndex: 2 }}>
+            <div style={S.cochDore} title="Le cochonnet d'or" />
+            <h1 style={{ ...S.h1, color: TEAM_COLORS[game.winner] }}>{TEAM_NAMES[game.winner]} gagne !</h1>
+            <p style={S.sub}>Score final : {activeTeams(game).map(t => `${TEAM_NAMES[t]} ${game.scores[t]}`).join(" — ")}</p>
+            {activeTeams(game).filter(t => t !== game.winner && game.scores[t] === 0).map(t => (
+              <div key={t} style={S.fanny}>
+                <div style={S.fannyTampon}>FANNY !</div>
+                <p style={S.sub}>{TEAM_NAMES[t]} finit à zéro : {game.sansTournee ? "il faut embrasser Fanny." : "la tournée de pastis est pour eux."}</p>
+              </div>
+            ))}
+            {isHost && <button style={S.btn} onClick={resetGame}>Nouvelle partie</button>}
+          </div>
+        </>
       ) : (
         <>
           <div style={{
@@ -2688,6 +2737,19 @@ const styles = {
     textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.4,
   },
   range: { width: "100%", height: 36 },
+  confettis: { position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 1 },
+  cochDore: {
+    width: 64, height: 64, borderRadius: "50%",
+    background: "radial-gradient(circle at 35% 30%, #fff6c8 0%, #ffd23f 30%, #c98a12 75%, #6b4a08 100%)",
+    boxShadow: "0 0 24px rgba(255,210,63,0.75), 0 6px 14px rgba(0,0,0,0.4)",
+    animation: "dore 1s cubic-bezier(.2,1.4,.4,1) both",
+  },
+  fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
+  fannyTampon: {
+    fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 30, letterSpacing: 3, color: "#e0432b",
+    border: "4px solid #e0432b", borderRadius: 8, padding: "2px 14px",
+    animation: "tampon .7s .5s cubic-bezier(.2,1.2,.4,1) both",
+  },
 
   aideFond: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(22, 27, 14, 0.88)",
