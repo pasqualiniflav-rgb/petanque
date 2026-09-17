@@ -871,6 +871,118 @@ export function marquerTraces(bodies, T, inscrire = true) {
   }
 }
 
+// ---------- Boules ------------------------------------------------
+// Chaque boule est pré-rendue en sprite, trois fois plus finement qu'à
+// l'écran : on peut y soigner les reflets sans les recalculer soixante
+// fois par seconde. Une sprite par couleur d'équipe, plus le cochonnet.
+
+// Les dégradés sont définis une fois dans un cercle unité, puis mis à
+// l'échelle au moment du tracé : on garde le contour vectoriel — donc
+// parfaitement net — sans reconstruire un dégradé par boule et par image.
+
+const palettes = new Map();
+let palettesCtx = null, spriteOmbre = null;
+
+function teinte(hex, vers, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return `rgb(${c.map((v, i) => Math.round(v + (vers[i] - v) * f)).join(",")})`;
+}
+
+const BLANC = [255, 255, 255], NOIR = [0, 0, 0];
+
+function paletteBoule(ctx, cle) {
+  if (palettesCtx !== ctx) { palettes.clear(); palettesCtx = ctx; }
+  if (palettes.has(cle)) return palettes.get(cle);
+  const bois = cle === "coch";
+  // Un dégradé décentré doit porter au-delà du rayon 1, sinon tout le
+  // quart opposé à la lumière tombe d'un coup dans la teinte de fin.
+  const unite = (x, y, r0, r1, couleurs) => {
+    const g = ctx.createRadialGradient(x, y, r0, x, y, r1);
+    for (const [p, c] of couleurs) g.addColorStop(p, c);
+    return g;
+  };
+  const p = {
+    // acier teinté : éclairé au haut-gauche, presque noir au bas-droite
+    corps: unite(-0.4, -0.45, 0.02, 1.62, bois
+      ? [[0, "#fff8e6"], [0.22, "#f7c264"], [0.5, "#d9922e"], [0.78, "#9c5e17"], [1, "#6d400f"]]
+      : [[0, teinte(cle, BLANC, 0.82)], [0.18, teinte(cle, BLANC, 0.36)],
+         [0.38, teinte(cle, BLANC, 0.1)], [0.6, cle],
+         [0.8, teinte(cle, NOIR, 0.46)], [1, teinte(cle, NOIR, 0.8)]]),
+    // le ciel se pose sur la calotte, le sable chaud renvoie par en bas
+    ciel: unite(0, 0, 0, 1, [[0, bois ? "rgba(255,242,214,0.3)" : "rgba(190,228,248,0.36)"],
+                          [0.6, bois ? "rgba(255,242,214,0.11)" : "rgba(190,228,248,0.13)"],
+                          [1, "rgba(190,228,248,0)"]]),
+    sol: unite(0, 0, 0, 1, [[0, "rgba(236,206,146,0.42)"], [0.6, "rgba(236,206,146,0.16)"],
+                         [1, "rgba(236,206,146,0)"]]),
+    // éclat du soleil : petit, franc, légèrement fondu sur les bords
+    eclat: unite(0, 0, 0, 1, [[0, "rgba(255,255,255,0.98)"], [0.45, "rgba(255,255,255,0.9)"],
+                           [0.75, "rgba(255,255,255,0.35)"], [1, "rgba(255,255,255,0)"]]),
+    // le contour bas reste dans l'ombre : la boule est posée, pas collée
+    creux: unite(-0.2, -0.24, 0.36, 1.32, [[0, "rgba(0,0,0,0)"], [0.78, "rgba(18,12,4,0.12)"],
+                                           [1, "rgba(18,12,4,0.46)"]]),
+  };
+  palettes.set(cle, p);
+  return p;
+}
+
+// Une boule d'acier teintée, vue du dessus, soleil bas au haut-gauche
+function dessinerBoule(ctx, x, y, r, cle) {
+  const p = paletteBoule(ctx, cle);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip(); // tous les reflets restent dans la sphère
+  const pose = (grad, dx, dy, rx, ry) => {
+    ctx.save();
+    ctx.translate(dx * r, dy * r);
+    ctx.scale(rx * r, ry * r);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  pose(p.corps, 0, 0, 1, 1);
+  pose(p.ciel, -0.08, -0.52, 0.78, 0.4);
+  pose(p.sol, 0.12, 0.64, 0.66, 0.3);
+  // liseré d'acier sur le bord opposé à la lumière
+  ctx.strokeStyle = "rgba(255,248,230,0.17)";
+  ctx.lineWidth = r * 0.12;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.94, 0.35, 2.5);
+  ctx.stroke();
+  if (cle !== "coch") { // stries de la boule de pétanque, à peine marquées
+    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    ctx.lineWidth = Math.max(0.5, r * 0.07);
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 0.9, r * (0.52 + i * 0.17), -0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  pose(p.creux, 0, 0, 1, 1);
+  pose(p.eclat, -0.37, -0.43, 0.3, 0.2);
+  ctx.restore();
+}
+
+// Ombre portée : une tache douce, étirée et pâlie quand la boule s'élève
+function spriteOmbreBoule() {
+  if (spriteOmbre) return spriteOmbre;
+  const S = 96;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const cx = cv.getContext("2d");
+  const g = cx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0, "rgba(58,44,22,0.5)");
+  g.addColorStop(0.42, "rgba(58,44,22,0.3)");
+  g.addColorStop(0.75, "rgba(58,44,22,0.09)");
+  g.addColorStop(1, "rgba(58,44,22,0)");
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, S, S);
+  spriteOmbre = cv;
+  return cv;
+}
+
 // ---------- Dessin ------------------------------------------------
 
 export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
@@ -962,24 +1074,17 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   }
   for (const b of list) {
     if (b.dead) continue;
-    // ombre (décalée quand la boule vole, pendant un tir)
+    // ombre portée : elle s'élargit et pâlit quand la boule quitte le sol
     const lift = b.air > 0 ? 7 : (b._lob ? b._lob * 7 : 0);
-    ctx.beginPath();
-    ctx.fillStyle = "rgba(70,55,30,0.25)";
-    ctx.ellipse(b.x + 2, b.y + 4 + lift, b.r, b.r * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const eo = b.r * (2.5 + lift * 0.1);
+    ctx.globalAlpha = lift ? 0.55 : 1;
+    ctx.drawImage(spriteOmbreBoule(),
+      b.x + 1.6 + lift * 0.35 - eo / 2, b.y + 3.2 + lift * 0.5 - eo * 0.33, eo, eo * 0.66);
+    ctx.globalAlpha = 1;
     // corps
     const by = b.y - lift;
-    const g = ctx.createRadialGradient(b.x - b.r / 3, by - b.r / 3, 1, b.x, by, b.r);
-    if (b.kind === "coch") {
-      g.addColorStop(0, "#ffd98a"); g.addColorStop(1, "#c67f1e");
-    } else {
-      g.addColorStop(0, "#eee"); g.addColorStop(0.35, TEAM_COLORS[b.team]); g.addColorStop(1, "#222");
-    }
-    ctx.beginPath();
-    ctx.fillStyle = g;
-    ctx.arc(b.x, by, b.r + (lift ? 1.5 : 0), 0, Math.PI * 2);
-    ctx.fill();
+    dessinerBoule(ctx, b.x, by, b.r + (lift ? 1.5 : 0),
+      b.kind === "coch" ? "coch" : TEAM_COLORS[b.team]);
     if (ivresse > 0) { // vision double : un fantôme décalé de chaque boule
       ctx.globalAlpha = Math.min(0.35, 0.1 + ivresse * 0.045);
       ctx.beginPath();
