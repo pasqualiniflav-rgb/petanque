@@ -19,7 +19,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | 2 | **Bot : cerveau** | ~~Le bot simule des lancers candidats avec la vraie physique et choisit le meilleur, bruité selon son niveau~~ ✅ Fait | M | — |
 | 3 | **Bot : niveaux** | ~~3 difficultés~~ ✅ Fait : *Fanny* / *Pointeur* / *Fada*, du très maladroit au chirurgical | S | 2 |
 | 4 | **Bot : au salon** | ~~L'hôte ajoute un bot dans n'importe quelle équipe ; jouable 100 % solo~~ ✅ Fait (les équipes de bots offrent même leur tournée) | S | 2 |
-| 5 | **Bot remplaçant** | Après 3 timeouts consécutifs d'un joueur, proposition de le remplacer par un bot | S | 2 |
+| 5 | **Bot remplaçant** | ~~Après 3 timeouts consécutifs d'un joueur, proposition de le remplacer par un bot~~ ✅ Fait (il garde son nom et ses boules, et reprend la main quand il revient) | S | 2 |
 | 6 | **Écran d'aide** | Règles + commandes en une page (les nouveaux arrivent sans rien connaître) | S | — |
 | 7 | **Reprise de partie** | Rejoindre en cours de partie proprement (aujourd'hui : spectateur seulement) | M | — |
 | 8 | **QA multi-supports** | Passe complète PC (Chrome/Firefox/Safari/Edge) + mobiles, corrections | M | — |

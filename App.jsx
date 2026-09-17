@@ -459,6 +459,7 @@ function normalize(st) {
   st.scores = st.scores || { A: 0, B: 0, C: 0 };
   st.drinks = st.drinks || { A: 0, B: 0, C: 0 };
   st.tourneePending = st.tourneePending || null;
+  st.absents = st.absents || {}; // lancers manqués d'affilée, par joueur
   st.lastTournee = st.lastTournee || null;
   st.streak = st.streak || null;
   st.terrain = st.terrain || "classique";
@@ -1336,13 +1337,21 @@ export default function Petanque() {
   const seenTourneeRef = useRef(0);
   const autoLancerRef = useRef(""); // évite de déclencher deux fois le lancer du timer
   const botRef = useRef("");        // idem pour le coup d'un bot
-  const tourneeBotRef = useRef(""); // ... et pour sa tournée
+  const tourneeBotRef = useRef("");   // ... et pour sa tournée
+  const attenteTourneeRef = useRef(0); // depuis quand un bot attend une tournée
   gameRef.current = game;
 
   const me = game?.players.find(p => p.id === meId) || null;
-  const isHost = game && game.players[0]?.id === meId;
+  // Qui mène la partie (salon, propositions, coups des bots) : le premier
+  // joueur humain ; si la table n'a plus que des bots, l'appareil du
+  // premier joueur qui s'est fait remplacer — sinon personne ne les ferait
+  // jouer.
+  const meneur = game
+    ? (game.players.filter(p => !p.bot)[0] || game.players.filter(p => p.remplace)[0] || null)
+    : null;
+  const isHost = !!meneur && meneur.id === meId;
   const turnId = game && game.phase === "playing" ? nextToPlay(game) : null;
-  const myTurn = turnId !== null && turnId === meId;
+  const myTurn = turnId !== null && turnId === meId && !me?.bot;
   const cochToThrow = !!(game && game.phase === "playing" && game.mene && !game.mene.cochonnet);
   const ivresseNiveau = Math.min(6, (game && me && game.drinks && game.drinks[me.team]) || 0);
   const T = terrainDe(game);
@@ -1430,16 +1439,19 @@ export default function Petanque() {
     const ctx = cv.getContext("2d");
     const marquer = !etiquette; // un « Revoir » ne recreuse pas le terrain
     let frames = 0;
+    const finir = () => {
+      if (marquer) fusionnerTraces();
+      setAnimating(false); setNotice(""); refreshRef.current && refreshRef.current();
+    };
     const loop = () => {
-      const moving = stepPhysics(bodies, Tg);
-      marquerTraces(bodies, Tg, marquer);
-      drawField(ctx, g, bodies, null, ivresse, Tg);
-      frames++;
-      if (moving && frames < 1200) requestAnimationFrame(loop);
-      else {
-        if (marquer) fusionnerTraces();
-        setAnimating(false); setNotice(""); refreshRef.current && refreshRef.current();
-      }
+      try {
+        const moving = stepPhysics(bodies, Tg);
+        marquerTraces(bodies, Tg, marquer);
+        drawField(ctx, g, bodies, null, ivresse, Tg);
+        frames++;
+        if (moving && frames < 1200) requestAnimationFrame(loop);
+        else finir();
+      } catch (e) { finir(); }
     };
     const delai = etiquette ? 0 : Math.max(0, (g.replay.startAt || 0) - Date.now());
     setTimeout(() => requestAnimationFrame(loop), delai);
@@ -1511,15 +1523,16 @@ export default function Petanque() {
     const amax = terrainDe(game).angleMax;
     const hasardA = Math.round((Math.random() - 0.5) * 1.9 * amax);
     const hasardP = 25 + Math.round(Math.random() * 75);
+    const lui = game.players.find(p => p.id === turnId);
+    if (lui?.bot) return; // un bot ne se fait pas doubler par le chronomètre
     if (myTurn && ecouleMs > TEMPS_LANCER * 1000) {
       autoLancerRef.current = marque;
       setNotice("Temps écoulé — la boule part toute seule !");
-      throwBoule(meId, hasardA, hasardP, "point");
+      throwBoule(meId, hasardA, hasardP, "point", true);
     } else if (!myTurn && ecouleMs > (TEMPS_LANCER + 4) * 1000) {
       autoLancerRef.current = marque;
-      const lui = game.players.find(p => p.id === turnId);
       setNotice(`Temps écoulé pour ${lui?.name ?? "…"} — lancer automatique !`);
-      throwBoule(turnId, hasardA, hasardP, "point");
+      throwBoule(turnId, hasardA, hasardP, "point", true);
     }
   });
 
@@ -1527,22 +1540,29 @@ export default function Petanque() {
   // Un bot n'a pas d'appareil : le premier joueur humain de la liste joue
   // pour lui. Un seul appareil s'en charge, les autres reçoivent le coup
   // par le chemin habituel et le rejouent.
-  const jeSuisLeMeneur = !!game && game.players.filter(p => !p.bot)[0]?.id === meId;
-
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || !turnId || !jeSuisLeMeneur) return;
+    if (!game || game.phase !== "playing" || animating || !turnId || !isHost) return;
     const lui = game.players.find(p => p.id === turnId);
     if (!lui || !lui.bot) return;
     // Une tournée en attente chez une équipe de bots se règle d'abord :
     // sinon le coup suivant, parti d'une copie plus ancienne, l'effacerait.
-    if (game.tourneePending && !game.players.some(p => p.team === game.tourneePending && !p.bot)) return;
+    // Mais on n'attend pas indéfiniment : une tournée ne bloque pas la partie.
+    if (game.tourneePending && !game.players.some(p => p.team === game.tourneePending && !p.bot)) {
+      if (!attenteTourneeRef.current) attenteTourneeRef.current = Date.now();
+      if (Date.now() - attenteTourneeRef.current < 4000) return;
+    } else {
+      attenteTourneeRef.current = 0;
+    }
     const marque = turnId + ":" + (game.rev || 0);
     if (botRef.current === marque) return;
     botRef.current = marque;
     setNotice(`${lui.name} étudie le terrain…`);
     setTimeout(() => {
       const g = gameRef.current;
-      if (!g || g.phase !== "playing" || animatingRef.current || nextToPlay(g) !== turnId) return;
+      if (!g || g.phase !== "playing" || animatingRef.current || nextToPlay(g) !== turnId) {
+        botRef.current = ""; // rien joué : on retentera au prochain battement d'horloge
+        return;
+      }
       const coup = coupDuBot(g, terrainDe(g), lui); // il essaie ses lancers dans sa tête
       throwBoule(turnId, coup.angle, coup.power, coup.mode);
     }, 1200);
@@ -1551,7 +1571,7 @@ export default function Petanque() {
   // Une équipe qui n'a que des bots offre sa tournée toute seule, sinon
   // personne ne boirait jamais dans une partie en solo.
   useEffect(() => {
-    if (!game || game.phase !== "playing" || !game.tourneePending || !jeSuisLeMeneur) return;
+    if (!game || game.phase !== "playing" || !game.tourneePending || !isHost) return;
     const t = game.tourneePending;
     if (game.players.some(p => p.team === t && !p.bot)) return; // un humain décide
     const marque = "t" + t + ":" + (game.mene?.num ?? 0);
@@ -1559,7 +1579,7 @@ export default function Petanque() {
     tourneeBotRef.current = marque;
     const autres = activeTeams(game).filter(x => x !== t);
     setTimeout(() => {
-      if (!autres.length) return;
+      if (!autres.length || gameRef.current?.tourneePending !== t) { tourneeBotRef.current = ""; return; }
       offrirTournee(autres[Math.floor(Math.random() * autres.length)], t);
     }, 700);
   });
@@ -1587,6 +1607,11 @@ export default function Petanque() {
     const existing = g.players.find(p => p.name.toLowerCase() === n.toLowerCase());
     if (existing) {
       setMeId(existing.id);
+      if (existing.bot && existing.remplace) { // il était remplacé : il reprend sa place
+        delete existing.bot; delete existing.niveau; delete existing.remplace;
+        if (g.absents) g.absents[existing.id] = 0;
+        await saveGame(c, g);
+      }
     } else if (g.phase !== "lobby") {
       setNotice("La partie a déjà commencé — tu peux regarder en spectateur.");
       setMeId(null);
@@ -1635,6 +1660,26 @@ export default function Petanque() {
 
   const retirerBot = id => mutate(g => { g.players = g.players.filter(p => p.id !== id); });
 
+  // Un joueur parti sans prévenir : un bot prend sa place sans arrêter la
+  // partie. Il garde son nom, ses boules et sa place dans l'ordre.
+  const remplacerParBot = id => mutate(g => {
+    const p = g.players.find(x => x.id === id);
+    if (!p || p.bot) return;
+    p.bot = true; p.niveau = niveauBot; p.remplace = true;
+    g.absents = g.absents || {}; g.absents[id] = 0;
+  });
+
+  const laisserJoueur = id => mutate(g => { g.absents = g.absents || {}; g.absents[id] = 0; });
+
+  // ... et s'il revient, il récupère ses boules
+  const reprendreMain = () => mutate(g => {
+    const p = g.players.find(x => x.id === meId);
+    if (!p) return;
+    delete p.bot; delete p.niveau; delete p.remplace;
+    g.absents = g.absents || {}; g.absents[meId] = 0;
+    setNotice("");
+  });
+
   const setBoules = n => mutate(g => { g.boulesEach = n; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
 
@@ -1668,7 +1713,7 @@ export default function Petanque() {
 
   // --- lancer -----------------------------------------------------
   // pid : le joueur qui lance (soi-même, ou le retardataire du timer)
-  async function throwBoule(pid = meId, angleV = angle, powerV = power, modeV = mode) {
+  async function throwBoule(pid = meId, angleV = angle, powerV = power, modeV = mode, auto = false) {
     if (animating) return;
     if (pid === meId && !myTurn) return;
     setAnimating(true);
@@ -1732,20 +1777,27 @@ export default function Petanque() {
     annonce.replay = { id: replayMeta.id, startAt: replayMeta.startAt, before: replayMeta.before, thrown };
     saveGame(code, annonce); // sans attendre
     setNotice("Tout le monde regarde…");
-    const ctx = canvasRef.current.getContext("2d");
+    // Le canvas peut manquer (écran d'accueil, partie terminée) : le lancer
+    // doit aboutir quand même, sinon la partie reste figée sur ce coup.
+    const ctx = canvasRef.current ? canvasRef.current.getContext("2d") : null;
     let frames = 0;
     const loop = () => {
-      const moving = stepPhysics(bodies, Ts);
-      marquerTraces(bodies, Ts);
-      drawField(ctx, st, bodies, null, ivresse, Ts);
-      frames++;
-      if (moving && frames < 1200) { requestAnimationFrame(loop); }
-      else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid); }
+      try {
+        const moving = stepPhysics(bodies, Ts);
+        marquerTraces(bodies, Ts);
+        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts);
+        frames++;
+        if (moving && frames < 1200) { requestAnimationFrame(loop); }
+        else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid, auto); }
+      } catch (e) {
+        setAnimating(false); // jamais bloquer la partie sur un souci d'affichage
+        setNotice("Souci d'affichage pendant le lancer — appuie sur Actualiser.");
+      }
     };
     setTimeout(() => { setNotice(""); requestAnimationFrame(loop); }, Math.max(0, replayMeta.startAt - Date.now()));
   }
 
-  async function commit(st, bodies, thrown, replayMeta, pid) {
+  async function commit(st, bodies, thrown, replayMeta, pid, auto) {
     const Ts = terrainDe(st);
     const DEP = departDe(Ts);
     const wasCochThrow = !st.mene.cochonnet;
@@ -1767,6 +1819,11 @@ export default function Petanque() {
     if (!wasCochThrow) {
       st.mene.left[pid] = Math.max(0, (st.mene.left[pid] || 0) - 1);
     }
+    // Un joueur qui laisse filer le chronomètre plusieurs fois de suite
+    // finit par se voir proposer un remplaçant.
+    st.absents = st.absents || {};
+    const quiLance = st.players.find(p => p.id === pid);
+    if (quiLance && !quiLance.bot) st.absents[pid] = auto ? (st.absents[pid] || 0) + 1 : 0;
     if (nextToPlay(st) === null) {
       const res = scoreMene(st);
       if (res) {
@@ -1918,7 +1975,7 @@ export default function Petanque() {
         )}
         {!isHost && (
           <p style={S.hint}>
-            Terrain : {terrainDe(game).nom}. En attente que l'hôte ({game.players[0]?.name}) lance la partie…
+            Terrain : {terrainDe(game).nom}. En attente que l'hôte ({meneur?.name}) lance la partie…
           </p>
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1931,6 +1988,9 @@ export default function Petanque() {
   }
 
   const turnPlayer = game.players.find(p => p.id === turnId);
+  // Proposé à l'hôte seulement, et jamais pour le joueur en train de jouer
+  const absentAProposer = isHost && game.phase === "playing"
+    ? game.players.find(p => !p.bot && (game.absents?.[p.id] || 0) >= 3) : null;
   const pointLive = game.phase === "playing" && game.mene && game.mene.cochonnet && game.mene.boules.length
     ? scoreMene(game) : null;
 
@@ -1958,6 +2018,27 @@ export default function Petanque() {
             <button key={t} style={{ ...S.tourneeBtn, borderColor: TEAM_COLORS[t] }} onClick={() => offrirTournee(t)}>{TEAM_NAMES[t]}</button>
           ))}
           <button style={S.tourneeBtn} onClick={() => offrirTournee(null)}>Passer</button>
+        </div>
+      )}
+      {absentAProposer && (
+        <div style={S.tourneeBar}>
+          <span style={S.tourneeQ}>
+            {absentAProposer.id === meId
+              ? "Tu as laissé filer 3 lancers — un bot peut prendre la suite."
+              : `${absentAProposer.name} a laissé filer 3 lancers.`}
+          </span>
+          <button style={S.tourneeBtn} onClick={() => remplacerParBot(absentAProposer.id)}>
+            {absentAProposer.id === meId ? "Qu'un bot joue pour moi" : "Le remplacer par un bot"}
+          </button>
+          <button style={S.tourneeBtn} onClick={() => laisserJoueur(absentAProposer.id)}>
+            {absentAProposer.id === meId ? "Non, je joue" : "L'attendre"}
+          </button>
+        </div>
+      )}
+      {me?.bot && me.remplace && (
+        <div style={S.tourneeBar}>
+          <span style={S.tourneeQ}>🤖 Un bot joue tes boules pendant ton absence.</span>
+          <button style={S.tourneeBtn} onClick={reprendreMain}>Je suis là, je reprends</button>
         </div>
       )}
       {game.lastResult && game.phase !== "finished" && (
