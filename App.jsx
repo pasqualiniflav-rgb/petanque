@@ -1158,7 +1158,26 @@ function voileLumiere() {
 
 // ---------- Dessin ------------------------------------------------
 
-export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
+// Petite pilule de texte dessinée sur le canvas : bandeau de résultat sur
+// le décor, indication de geste ou message sur le sable. Ça libère autant
+// de rangées d'écran pour le terrain.
+function pilule(ctx, texte, y, accent) {
+  if (!texte) return;
+  ctx.save();
+  ctx.font = `${accent ? "600 " : ""}12px -apple-system, 'Segoe UI', Roboto, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const w = Math.min(VIEW_W - 12, ctx.measureText(texte).width + 22), h = 24;
+  const x = VIEW_W / 2;
+  ctx.fillStyle = accent ? "rgba(246,195,36,0.92)" : "rgba(24,28,16,0.78)";
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(x - w / 2, y - h / 2, w, h, 12) : ctx.rect(x - w / 2, y - h / 2, w, h);
+  ctx.fill();
+  ctx.fillStyle = accent ? "#26200c" : "#f2eddd";
+  ctx.fillText(texte, x, y + 1, w - 14);
+  ctx.restore();
+}
+
+export function drawField(ctx, st, bodiesOverride, aim, ivresse, T, hud) {
   const list = bodiesOverride || makeBodies(st);
   const START = departDe(T);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1318,6 +1337,12 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     }
   }
 
+  // textes posés sur la scène
+  if (hud) {
+    pilule(ctx, hud.banniere, SKY_H - 14, false);
+    pilule(ctx, hud.notice || hud.indication, SKY_H + VIEW_H - 66, !!hud.notice);
+  }
+
   // mini-carte du grand terrain
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1456,6 +1481,7 @@ export default function Petanque() {
   const [gel, setGel] = useState(null);
   const gelRef = useRef(null);
   gelRef.current = gel;
+  const hudRef = useRef({}); // textes à dessiner sur le canvas (voir plus bas)
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
@@ -1640,7 +1666,7 @@ export default function Petanque() {
       try {
         const moving = stepPhysics(bodies, Tg);
         marquerTraces(bodies, Tg, marquer);
-        drawField(ctx, g, bodies, null, ivresse, Tg);
+        drawField(ctx, g, bodies, null, ivresse, Tg, hudRef.current);
         frames++;
         if (moving && frames < 1200) requestAnimationFrame(loop);
         else finir();
@@ -1788,8 +1814,8 @@ export default function Petanque() {
     if (!cv || !game || game.phase === "lobby" || animating) return;
     const visee = geste ? { ...geste, geste: true }
       : (myTurn && !gel && curseurs ? { angle } : null);
-    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs]);
+    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T, hudRef.current);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, notice]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -1992,7 +2018,7 @@ export default function Petanque() {
       try {
         const moving = stepPhysics(bodies, Ts);
         marquerTraces(bodies, Ts);
-        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts);
+        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts, hudRef.current);
         frames++;
         if (moving && frames < 1200) { requestAnimationFrame(loop); }
         else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid, auto); }
@@ -2290,8 +2316,20 @@ export default function Petanque() {
   const nomCourt = t => TEAM_NAMES[t].replace("Équipe ", "").toUpperCase();
   const ligneTour = game.phase !== "playing" ? "Partie terminée"
     : gel && !gel.commit ? "résultat du lancer…"
-    : myTurn ? `À toi, ${me?.name} !`
+    : myTurn ? "À toi !"
     : `${turnPlayer?.bot ? "🤖 " : ""}${turnPlayer?.name ?? "…"}`;
+  // Ce qui s'écrit sur le canvas plutôt qu'en rangées d'écran
+  const lr = game.lastResult;
+  hudRef.current = {
+    banniere: lr && game.phase !== "finished"
+      ? `${CRIS[lr.mene % CRIS.length]} Mène ${lr.mene} : ${TEAM_NAMES[lr.team]} marque ${lr.pts} point${lr.pts > 1 ? "s" : ""}.`
+      : null,
+    notice: notice || null,
+    indication: !peutLancer || curseurs ? null
+      : geste ? (geste.valide ? "Relâche pour lancer" : "Tire vers l'arrière…")
+      : cochToThrow ? "Tu ouvres la mène : touche le terrain et tire vers l'arrière"
+      : `👆 Touche le terrain et tire vers l'arrière${mode === "tir" ? " — la longueur donne la distance du tir" : ""}`,
+  };
   const tableauAffichage = (
     <div style={S.tableau}>
       <div style={S.tableauCols}>
@@ -2378,11 +2416,6 @@ export default function Petanque() {
           <button style={S.tourneeBtn} onClick={reprendreMain}>Je suis là, je reprends</button>
         </div>
       )}
-      {game.lastResult && game.phase !== "finished" && (
-        <p style={S.banner}>
-          {CRIS[game.lastResult.mene % CRIS.length]} Mène {game.lastResult.mene} : {TEAM_NAMES[game.lastResult.team]} marque {game.lastResult.pts} point{game.lastResult.pts > 1 ? "s" : ""}.
-        </p>
-      )}
       {game.phase === "finished" ? (
         <div style={S.card}>
           <h1 style={S.h1}>{TEAM_NAMES[game.winner]} gagne !</h1>
@@ -2405,40 +2438,36 @@ export default function Petanque() {
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
           </div>
-          {myTurn && !animating && !gel && (
+          {myTurn && !animating && !gel && (curseurs || !cochToThrow) && (
             <div style={S.card}>
-              {cochToThrow ? (
-                <label style={S.label}>Tu ouvres la mène : lance d'abord le cochonnet.</label>
-              ) : (
-                <div style={{ display: "flex", gap: 8 }}>
+              {!cochToThrow && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button style={mode === "point" ? S.btnSmallOn : S.btnSmall} onClick={() => setMode("point")}>Pointer</button>
                   <button style={mode === "tir" ? S.btnSmallOn : S.btnSmall} onClick={() => setMode("tir")}>Tirer</button>
+                  {!curseurs && (
+                    <button style={S.btnGhost} onClick={() => basculerCurseurs(true)} title="Préférer les curseurs">⚙</button>
+                  )}
                 </div>
               )}
-              {curseurs ? (
+              {curseurs && (
                 <>
+                  {cochToThrow && <label style={S.label}>Tu ouvres la mène : lance d'abord le cochonnet.</label>}
                   <label style={S.label}>Direction</label>
                   <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
                   <label style={S.label}>{!cochToThrow && mode === "tir" ? "Distance de tir" : "Force"}</label>
                   <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
-                  <button style={S.btn} onClick={() => throwBoule()}>
-                    {cochToThrow ? "Lancer le cochonnet" : mode === "tir" ? "Tirer !" : "Lancer la boule"}
-                  </button>
-                  <button style={S.lien} onClick={() => basculerCurseurs(false)}>Lancer au doigt</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button style={{ ...S.btn, flex: 1, marginTop: 0 }} onClick={() => throwBoule()}>
+                      {cochToThrow ? "Lancer le cochonnet" : mode === "tir" ? "Tirer !" : "Lancer la boule"}
+                    </button>
+                    <button style={S.btnGhost} onClick={() => basculerCurseurs(false)} title="Lancer au doigt">👆</button>
+                  </div>
                 </>
-              ) : (
-                <p style={S.gesteHint}>
-                  {geste
-                    ? (geste.valide ? "Relâche pour lancer." : "Tire vers l'arrière…")
-                    : `👆 Touche le terrain et tire vers l'arrière : la flèche donne la direction, sa longueur la ${!cochToThrow && mode === "tir" ? "distance du tir" : "force"}.`}
-                  {!geste && <button style={S.lien} onClick={() => basculerCurseurs(true)}>Préférer les curseurs</button>}
-                </p>
               )}
             </div>
           )}
         </>
       )}
-      {notice && <p style={S.notice}>{notice}</p>}
     </div>
   );
 }
@@ -2452,11 +2481,13 @@ const styles = {
     display: "flex", flexDirection: "column", alignItems: "center",
     padding: "16px 12px 24px", boxSizing: "border-box", gap: 12,
   },
+  // Écran de jeu : jamais de défilement, le terrain prend toute la place
+  // que les bandeaux lui laissent
   pageGame: {
     height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 45%, #232919 100%)", color: "#f2eddd",
     fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "center",
-    padding: "8px 10px", boxSizing: "border-box", gap: 8,
+    padding: "6px 8px", boxSizing: "border-box", gap: 6,
   },
   canvasWrap: {
     flex: 1, minHeight: 0, width: "100%",
@@ -2467,40 +2498,41 @@ const styles = {
   tagline: { fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 14, color: "#8fd4f0", margin: 0 },
   sub: { fontSize: 14, lineHeight: 1.5, opacity: 0.85, maxWidth: 360, textAlign: "center", margin: 0 },
   card: {
-    background: "#333b28", borderRadius: 10, padding: 12, width: "100%",
-    maxWidth: 360, display: "flex", flexDirection: "column", gap: 6, boxSizing: "border-box",
+    background: "#333b28", borderRadius: 10, padding: 10, width: "100%",
+    maxWidth: 380, display: "flex", flexDirection: "column", gap: 6, boxSizing: "border-box",
   },
   label: { fontSize: 13, opacity: 0.8 },
   input: {
     padding: "10px 12px", borderRadius: 8, border: "1px solid #4a5438",
     background: "#242a1a", color: "#f2eddd", fontSize: 16, outline: "none",
   },
+  // Toutes les zones tactiles font au moins 44 px de haut
   btn: {
-    marginTop: 4, padding: "10px 16px", borderRadius: 8, border: "none",
+    marginTop: 4, padding: "10px 16px", minHeight: 44, borderRadius: 8, border: "none",
     background: "#f6c324", color: "#26200c", fontSize: 16, fontWeight: 600, cursor: "pointer",
   },
   btnGhost: {
-    padding: "10px 16px", borderRadius: 8, border: "1px solid #4a5438",
+    padding: "10px 16px", minHeight: 44, borderRadius: 8, border: "1px solid #4a5438",
     background: "transparent", color: "#f2eddd", fontSize: 14, cursor: "pointer",
   },
   btnSmall: {
-    padding: "8px 18px", borderRadius: 8, border: "1px solid #4a5438",
+    padding: "8px 18px", minHeight: 44, flex: 1, borderRadius: 8, border: "1px solid #4a5438",
     background: "transparent", color: "#f2eddd", fontSize: 15, cursor: "pointer",
   },
   btnSmallOn: {
-    padding: "8px 18px", borderRadius: 8, border: "1px solid #f6c324",
+    padding: "8px 18px", minHeight: 44, flex: 1, borderRadius: 8, border: "1px solid #f6c324",
     background: "#f6c324", color: "#26200c", fontSize: 15, fontWeight: 600, cursor: "pointer",
   },
   miniBtn: {
-    padding: "4px 10px", borderRadius: 6, border: "1px solid #4a5438",
+    padding: "6px 12px", minHeight: 40, borderRadius: 6, border: "1px solid #4a5438",
     background: "transparent", color: "#f2eddd", fontSize: 12, cursor: "pointer",
   },
   sndBtn: {
-    width: 40, height: 36, borderRadius: 8, border: "1px solid #4a5438", padding: 0,
-    background: "#333b28", color: "#f2eddd", fontSize: 15, cursor: "pointer", flexShrink: 0,
+    width: 40, height: 44, borderRadius: 8, border: "1px solid #4a5438", padding: 0,
+    background: "#333b28", color: "#f2eddd", fontSize: 16, cursor: "pointer", flexShrink: 0,
   },
   hint: { fontSize: 12, opacity: 0.65, lineHeight: 1.45, margin: 0 },
-  notice: { fontSize: 13, color: "#f0b23e", maxWidth: 360, textAlign: "center" },
+  notice: { fontSize: 12, color: "#f0b23e", maxWidth: 380, textAlign: "center", margin: 0 },
   canvas: {
     borderRadius: 10, boxShadow: "0 4px 18px rgba(0,0,0,0.35)",
     maxWidth: "100%", maxHeight: "100%", touchAction: "none",
@@ -2523,7 +2555,7 @@ const styles = {
     display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
   },
   tableauScore: {
-    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 30, fontWeight: 700,
+    fontFamily: "'Courier New', Menlo, Consolas, monospace", fontSize: 28, fontWeight: 700,
     lineHeight: 1.05, letterSpacing: 2, color: "#ffd23f",
     textShadow: "0 0 10px rgba(255,210,63,0.75), 0 0 2px rgba(255,210,63,0.9)",
   },
@@ -2564,23 +2596,23 @@ const styles = {
   nivTag: { fontSize: 10, opacity: 0.6 },
   retirerBtn: {
     border: "none", background: "transparent", color: "#f0b23e",
-    fontSize: 15, lineHeight: 1, padding: 0, cursor: "pointer",
+    fontSize: 18, lineHeight: 1, padding: "0 6px", minWidth: 36, minHeight: 36, cursor: "pointer",
   },
   teamActions: { marginLeft: "auto", display: "flex", gap: 6 },
   turn: { fontSize: 14, fontWeight: 600, margin: 0, textAlign: "center" },
   pointLive: { fontSize: 12, opacity: 0.85, margin: 0, textAlign: "center" },
   banner: {
-    fontSize: 13, background: "#3d462e", borderRadius: 8, padding: "8px 12px",
-    maxWidth: 360, margin: 0, textAlign: "center",
+    fontSize: 12, background: "#3d462e", borderRadius: 8, padding: "5px 10px",
+    maxWidth: 380, margin: 0, textAlign: "center",
   },
   tourneeBar: {
     display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
-    background: "#3d462e", borderRadius: 8, padding: "6px 10px",
-    width: "100%", maxWidth: 360, boxSizing: "border-box",
+    background: "#3d462e", borderRadius: 8, padding: "6px 8px",
+    width: "100%", maxWidth: 380, boxSizing: "border-box",
   },
   tourneeQ: { fontSize: 12, fontWeight: 600 },
   tourneeBtn: {
-    padding: "4px 10px", borderRadius: 6, border: "1px solid #4a5438",
+    padding: "6px 12px", minHeight: 44, borderRadius: 6, border: "1px solid #4a5438",
     background: "#242a1a", color: "#f2eddd", fontSize: 12, cursor: "pointer",
   },
   tourneeOverlay: {
@@ -2593,12 +2625,8 @@ const styles = {
     fontFamily: "Georgia, serif", fontSize: 19, color: "#f6c324",
     textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.4,
   },
-  range: { width: "100%" },
-  gesteHint: { fontSize: 13, lineHeight: 1.45, margin: 0, opacity: 0.9, textAlign: "center" },
-  lien: {
-    border: "none", background: "transparent", color: "#8fd4f0", fontSize: 12,
-    textDecoration: "underline", cursor: "pointer", padding: "6px 8px", minHeight: 32,
-  },
+  range: { width: "100%", height: 36 },
+
   aideFond: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(22, 27, 14, 0.88)",
     overflowY: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center",

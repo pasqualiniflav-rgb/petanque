@@ -30,7 +30,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 |---|------|--------|------|
 | A1 | **Synchro** | ~~Sauts/coupures entre un lancer, son affichage et le tour suivant~~ ✅ Corrigé — le rafraîchissement de fin de rejeu se croyait encore en animation et ne faisait rien (attente du sondage, 0-4 s) ; résultat officiel désormais en ~30 ms, tapis figé le temps qu'il arrive, pause de 3 s sur le tapis final en fin de mène, chronomètre local (plus de dérive d'horloge entre téléphones) | ✅ |
 | B2 | **Lancer au doigt** | ~~Glisser-relâcher sur le terrain : direction + force, flèche de visée ; curseurs gardés en option~~ ✅ Fronde : on touche, on tire vers l'arrière, on relâche ; flèche + jauge de force ; « Préférer les curseurs » retenu sur l'appareil | ✅ |
-| B3 | **Mise en page mobile** | Zéro scroll, terrain agrandi, zones tactiles ≥ 44 px | ⬜ |
+| B3 | **Mise en page mobile** | ~~Zéro scroll, terrain agrandi, zones tactiles ≥ 44 px~~ ✅ Mesuré à 375×812 et 360×640 : aucun défilement, tous les boutons ≥ 44 px ; bandeau de résultat, indication du geste et messages dessinés dans le canvas, une seule rangée de commandes | ✅ |
 | B4 | **Scoreboard de stade** | ~~Panneau d'affichage compact façon fronton de boulodrome~~ ✅ Fond sombre, chiffres lumineux, une colonne par équipe (score, ●, 🍹, qui tient le point), ligne de jeu avec mène, joueur au tour, chronomètre et outils | ✅ |
 | B5 | **Boutons** | ~~Suppression d'Actualiser, ↺ pour revoir, ⌂ retour accueil~~ ✅ Outils regroupés dans le fronton : ↺ (quand un coup est à revoir), 🦗, 🎵, ?, ⌂ ; ⌂ aussi au salon | ✅ |
 | C6 | **Sons** | Plus de démarrage automatique : 🦗 et 🎵 seuls déclencheurs | ⬜ |
