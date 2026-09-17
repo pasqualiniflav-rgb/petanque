@@ -230,6 +230,18 @@ const NIVEAUX_BOT = {
   fada:     { nom: "Fada",    sous: "chirurgical", grille: 8, affine: 2, bruitA: 0.03, bruitF: 2,  tire: true },
 };
 const ORDRE_BOTS = ["fanny", "pointeur", "fada"];
+// Pour le 🎲 de l'accueil : de quoi se trouver un prénom d'ici en un geste.
+// Tout cet aléa reste hors de la simulation.
+const PRENOMS_PROVENCE = ["Marius", "Fanny", "César", "Panisse", "Honorine", "Escartefigue",
+  "Titin", "Félicie", "Ugolin", "Manon", "Angèle", "Galinette", "Baptistin", "Mireille",
+  "Fernand", "Toinou", "Zézé", "Rosette", "Jeannot", "Aurore", "Lisette", "Paulin", "Amédée",
+  "Clémence", "Tonin", "Norine", "Estelle", "Frédéri"];
+const MOTS_CODE = ["APERO", "PASTIS", "CIGALE", "PLATANE", "BOULE", "CARREAU", "MISTRAL",
+  "SOLEIL", "FANNY", "PETANQUE", "CALANQUE", "GARRIGUE"];
+const prenomAleatoire = () => PRENOMS_PROVENCE[Math.floor(Math.random() * PRENOMS_PROVENCE.length)];
+const codeAleatoire = () => MOTS_CODE[Math.floor(Math.random() * MOTS_CODE.length)]
+  + String(10 + Math.floor(Math.random() * 90));
+const lienPartie = code => `${location.origin}${location.pathname}?partie=${encodeURIComponent(code)}`;
 // De quoi baptiser les bots sans jamais tomber deux fois sur le même
 const PRENOMS_BOT = ["Marius", "Panisse", "César", "Escartefigue", "Honorine",
                      "Titin", "Félicie", "Gervais", "Ugolin"];
@@ -1546,6 +1558,14 @@ export default function Petanque() {
   // Photo de décor optionnelle : cherchée une fois, elle remplace le dessin
   useEffect(() => { chargerPhotoDecor(() => setDecorPret(x => x + 1)); }, []);
 
+  // Arrivée par un lien ?partie=CODE : le code est déjà rempli. Sinon on en
+  // propose un, pour que créer une partie ne demande qu'un prénom.
+  useEffect(() => {
+    let dansLien = null;
+    try { dansLien = new URLSearchParams(location.search).get("partie"); } catch {}
+    setCode(c => c || (dansLien ? dansLien.toUpperCase() : codeAleatoire()));
+  }, []);
+
   // Traces dans le sable : terrain neuf au début de la partie, ratissé
   // entre deux mènes (il en reste un souvenir).
   const meneTracesRef = useRef(-1);
@@ -2094,6 +2114,23 @@ export default function Petanque() {
     if (!(await saveGame(code, st))) setNotice("Échec de synchronisation — le jeu réessaiera.");
   }
 
+  // Partager le lien de la partie : la feuille de partage du téléphone si
+  // elle existe, sinon le presse-papiers, et à défaut le lien affiché.
+  const partager = async () => {
+    const c = code.trim().toUpperCase();
+    if (!c) { setNotice("Choisis d'abord un code de partie."); return; }
+    const url = lienPartie(c);
+    try {
+      if (navigator.share) { await navigator.share({ title: "Pétanque en ligne", text: `Rejoins la partie ${c} !`, url }); return; }
+      await navigator.clipboard.writeText(url);
+      setNotice("Lien copié — envoie-le à tes amis.");
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // partage annulé
+      setNotice(url);
+    }
+    setTimeout(() => setNotice(""), 5000);
+  };
+
   // Retour à l'accueil sans recharger : on coupe tout ce qui tourne (le
   // flux temps réel se ferme tout seul au changement d'écran) et on garde
   // prénom et code pré-remplis pour revenir en un geste.
@@ -2222,11 +2259,15 @@ export default function Petanque() {
         <p style={S.sub}>Jusqu'à 9 joueurs à distance, chacun sur son appareil, sans compte ni installation. Le premier à {TARGET} points gagne, et une boule qui file au fond du terrain est morte.</p>
         <div style={S.card}>
           <label style={S.label}>Ton prénom</label>
-          <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="Marius" />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input style={{ ...S.input, flex: 1, minWidth: 0 }} value={name} onChange={e => setName(e.target.value)} placeholder="Marius" />
+            <button style={S.sndBtn} onClick={() => setName(prenomAleatoire())} title="Un prénom d'ici au hasard">🎲</button>
+          </div>
           <label style={S.label}>Code de la partie</label>
           <input style={S.input} value={code} onChange={e => setCode(e.target.value)} placeholder="APERO2026" />
           <button style={S.btn} disabled={busy} onClick={join}>Rejoindre ou créer la partie</button>
-          <p style={S.hint}>Partagez le même code entre vous : le premier arrivé crée la partie, les autres la rejoignent.</p>
+          <button style={S.btnGhost} onClick={partager}>📤 Partager le lien de la partie</button>
+          <p style={S.hint}>Le premier arrivé crée la partie, les autres la rejoignent avec le lien ou le code.</p>
         </div>
         {boutonsSon}
         {notice && <p style={S.notice}>{notice}</p>}
@@ -2241,6 +2282,7 @@ export default function Petanque() {
       <div style={S.page}>
         <h1 style={S.h1}>Partie {code}</h1>
         <p style={S.sub}>{game.players.length}/9 joueurs. Chacun choisit son équipe, puis l'hôte lance la partie.</p>
+        <button style={{ ...S.btnGhost, maxWidth: 360, width: "100%" }} onClick={partager}>📤 Partager le lien de la partie</button>
         {TEAMS.map(t => (
           <div key={t} style={{ ...S.teamBox, borderColor: TEAM_COLORS[t] }}>
             <div style={S.teamHead}>
