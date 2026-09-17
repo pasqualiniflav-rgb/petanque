@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Écran de jeu</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&amp;family=Oswald:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Oswald',sans-serif;background:#232919}
+a{color:#1d3a4f}a:hover{color:#10222f}
+</style>
+<style>body{display:flex;justify-content:center;align-items:flex-start;background:#141810;padding:24px;min-height:100vh}</style>
+
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 8px; display: flex; flex-direction: column; gap: 8px; background: linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%);">
+  <div style="width: 100%; box-sizing: border-box; background: #1d3a4f; border: 2px solid #10222f; border-radius: 6px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(242, 236, 220, 0.35); padding: 10px 12px 8px; display: flex; align-items: stretch; gap: 8px;">
+    <div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 2.5px; color: #7cc9e8;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #2ba3d4;"></span>CIEL</div>
+      <div style="font-size: 42px; line-height: 1; font-weight: 700; color: #ffd84d; text-shadow: 0 0 12px rgba(255, 216, 77, 0.55);">07</div>
+      <div style="display: flex; align-items: center; gap: 10px; color: #f2ecdc; font-size: 13px; font-weight: 600;">
+        <span style="display: flex; align-items: center; gap: 3px;"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="#d9d9d9" stroke="#8f8f8f" stroke-width="1"></circle></svg>2</span>
+        <span style="display: flex; align-items: center; gap: 3px;"><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2ecdc" stroke-width="1.4" stroke-linejoin="round"><path d="M2 1h8l-1.2 7a2.8 2.8 0 0 1-5.6 0z"></path><path d="M6 9v3"></path><path d="M3.5 13h5"></path><rect x="4" y="2.4" width="4" height="4.4" fill="#f6c324" stroke="none"></rect></svg>1</span>
+      </div>
+    </div>
+    <div style="flex: 0 0 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-left: 1px solid rgba(242, 236, 220, 0.35); border-right: 1px solid rgba(242, 236, 220, 0.35);">
+      <div style="font-size: 10px; font-weight: 600; letter-spacing: 3px; color: #f2ecdc;">M&Egrave;NE</div>
+      <div style="font-size: 26px; line-height: 1; font-weight: 700; color: #f2ecdc;">3</div>
+      <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ffd84d" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l3 2"></path><path d="M9 2h6"></path></svg>
+        <span style="font-size: 17px; font-weight: 700; color: #ffd84d;">18</span>
+      </div>
+    </div>
+    <div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 2.5px; color: #e8a08e;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #bd4f3a;"></span>ROUGE</div>
+      <div style="font-size: 42px; line-height: 1; font-weight: 700; color: #ffd84d; text-shadow: 0 0 12px rgba(255, 216, 77, 0.55);">05</div>
+      <div style="display: flex; align-items: center; gap: 10px; color: #f2ecdc; font-size: 13px; font-weight: 600;">
+        <span style="display: flex; align-items: center; gap: 3px;"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="#d9d9d9" stroke="#8f8f8f" stroke-width="1"></circle></svg>3</span>
+        <span style="display: flex; align-items: center; gap: 3px;"><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2ecdc" stroke-width="1.4" stroke-linejoin="round"><path d="M2 1h8l-1.2 7a2.8 2.8 0 0 1-5.6 0z"></path><path d="M6 9v3"></path><path d="M3.5 13h5"></path><rect x="4" y="2.4" width="4" height="4.4" fill="#f6c324" stroke="none"></rect></svg>2</span>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: center; gap: 8px;">
+    <button aria-label="Revoir le coup" style="width: 40px; height: 40px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d3a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4"></path><path d="M3 4v5h5"></path></svg></button>
+    <button aria-label="Cigales" style="width: 40px; height: 40px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d3a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M16 9l5 6"></path><path d="M21 9l-5 6"></path></svg></button>
+    <button aria-label="Musique" style="width: 40px; height: 40px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d3a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="18" r="3"></circle><circle cx="17" cy="16" r="3"></circle><path d="M10 18V5l10-2v13"></path></svg></button>
+    <button aria-label="Aide" style="width: 40px; height: 40px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 700; color: #1d3a4f;">?</button>
+    <button aria-label="Accueil" style="width: 40px; height: 40px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d3a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"></path><path d="M5 10v9h14v-9"></path><path d="M10 19v-5h4v5"></path></svg></button>
+  </div>
+  <div style="position: relative; flex-grow: 1; width: 100%; box-sizing: border-box; border: 6px solid #8a6b43; border-radius: 4px; overflow: hidden; background: #d8c49a;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 78px; background: linear-gradient(180deg, #a9d3e8 0%, #cfe6ef 100%); overflow: hidden;">
+      <div style="position: absolute; top: 8px; right: 26px; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle, #ffe9a8 20%, rgba(255, 233, 168, 0) 72%);"></div>
+      <div style="position: absolute; bottom: 8px; left: 0; right: 0; height: 34px; background: #ead9bb; border-top: 4px solid #c07a52; box-shadow: inset 0 -3px 0 rgba(138, 107, 67, 0.3);"></div>
+      <div style="position: absolute; bottom: 16px; left: 10px; width: 70px; height: 14px; background: repeating-linear-gradient(90deg, #9a8563 0 3px, #ead9bb 3px 11px);"></div>
+      <div style="position: absolute; bottom: 16px; left: 150px; width: 70px; height: 14px; background: repeating-linear-gradient(90deg, #9a8563 0 3px, #ead9bb 3px 11px);"></div>
+      <div style="position: absolute; bottom: 16px; right: 12px; width: 70px; height: 14px; background: repeating-linear-gradient(90deg, #9a8563 0 3px, #ead9bb 3px 11px);"></div>
+      <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 8px; background: #c9b183;"></div>
+      <div style="position: absolute; bottom: 8px; left: 92px; width: 7px; height: 28px; background: #8a6b43;"></div>
+      <div style="position: absolute; bottom: 28px; left: 74px; width: 44px; height: 40px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #9ac46e, #6d9a4e);"></div>
+      <div style="position: absolute; bottom: 8px; left: 232px; width: 7px; height: 30px; background: #8a6b43;"></div>
+      <div style="position: absolute; bottom: 30px; left: 210px; width: 50px; height: 44px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #9ac46e, #6d9a4e);"></div>
+      <div style="position: absolute; bottom: 8px; right: 96px; width: 6px; height: 26px; background: #8a6b43;"></div>
+      <div style="position: absolute; bottom: 26px; right: 80px; width: 38px; height: 36px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #9ac46e, #6d9a4e);"></div>
+    </div>
+    <div style="position: absolute; top: 78px; left: 0; right: 0; bottom: 0; background: radial-gradient(140px 90px at 30% 22%, rgba(112, 88, 52, 0.28), rgba(112, 88, 52, 0) 70%), radial-gradient(90px 60px at 62% 34%, rgba(112, 88, 52, 0.22), rgba(112, 88, 52, 0) 70%), radial-gradient(120px 300px at 50% 70%, rgba(112, 88, 52, 0.12), rgba(112, 88, 52, 0) 75%), #d8c49a;">
+      <div style="position: absolute; top: 96px; left: 168px; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #ffd98a, #c67f1e);"></div>
+      <div style="position: absolute; top: 84px; left: 118px; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #eaf6fc 8%, #2ba3d4 52%, #123647 100%); box-shadow: 4px 6px 6px rgba(70, 55, 30, 0.35);"></div>
+      <div style="position: absolute; top: 128px; left: 208px; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #f6ded8 8%, #bd4f3a 52%, #4a180f 100%); box-shadow: 4px 6px 6px rgba(70, 55, 30, 0.35);"></div>
+      <div style="position: absolute; bottom: 118px; left: 188px; width: 2px; height: 120px; background: #6b573a;"></div>
+      <div style="position: absolute; bottom: 232px; left: 181px;"><svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 0 16 12H0z" fill="#6b573a"></path></svg></div>
+      <div style="position: absolute; bottom: 52px; left: 50%; margin-left: -26px; width: 52px; height: 52px; border: 2px solid #8a6b43; border-radius: 50%;"></div>
+      <div style="position: absolute; left: 0; right: 0; bottom: 0; background: #2e2a24; color: #f2ecdc; font-size: 12px; font-weight: 500; letter-spacing: 0.5px; padding: 7px 12px; text-align: center;">Touche le terrain et tire vers l'arri&egrave;re</div>
+    </div>
+  </div>
+  <div style="display: flex; gap: 8px;">
+    <button style="flex-grow: 1; background: #f6c324; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 #1d3a4f; padding: 13px 8px; font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 2px; color: #1d3a4f; cursor: pointer;">POINTER</button>
+    <button style="flex-grow: 1; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(29, 58, 79, 0.6); padding: 13px 8px; font-family: 'Oswald', sans-serif; font-size: 17px; font-weight: 600; letter-spacing: 2px; color: #1d3a4f; cursor: pointer;">TIRER</button>
+    <button aria-label="Options" style="width: 50px; background: #f2ecdc; border: 2px solid #1d3a4f; border-radius: 4px; box-shadow: 0 3px 0 rgba(29, 58, 79, 0.6); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1d3a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg></button>
+  </div>
+</div>
+</body>
+</html>
