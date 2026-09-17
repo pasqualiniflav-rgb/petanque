@@ -6,7 +6,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // Long 10 m (caméra qui suit l'action + mini-carte).
 // ------------------------------------------------------------------
 
-const VIEW_W = 340, VIEW_H = 520; // taille du canvas à l'écran
+const VIEW_W = 340, VIEW_H = 520; // fenêtre de jeu (terrain) à l'écran
+const SKY_H = 84;                  // bande de décor au-dessus du terrain
+const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
+const DECOR_W = VIEW_W + 120;      // décor plus large : parallaxe sur le grand terrain
 const R_BOULE = 11, R_COCH = 6;
 const TEAMS = ["A", "B", "C"];
 const TEAM_COLORS = { A: "#2ba3d4", B: "#bd4f3a", C: "#c9a02e" };
@@ -17,7 +20,7 @@ const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le tr
 const TEMPS_LANCER = 15; // secondes par lancer
 
 // Chaque terrain porte sa géométrie et sa calibration physique.
-const TERRAINS = {
+export const TERRAINS = {
   classique: {
     nom: "Classique", W: 340, L: 520,
     camera: false, subSteps: 1, stopSeuil: 0.04,
@@ -377,13 +380,356 @@ async function saveGame(code, st) {
   } catch { return false; }
 }
 
+// ---------- Décor (bande au-dessus du terrain) --------------------
+// Tout ce bloc est purement visuel et local : il ne touche ni à la
+// physique ni à l'état partagé. Si une photo est posée à la racine du
+// dépôt, elle remplace le décor dessiné dès qu'elle est chargée.
+
+const PHOTOS_DECOR = ["decor.jpg", "decor.jpeg", "decor.png", "decor.webp"];
+let photoDecor = null;      // image trouvée, sinon null
+let photoCherchee = false;  // une seule tentative par session
+let decorCache = null;      // bande pré-rendue (redessinée à chaque image sinon)
+
+function chargerPhotoDecor(auChargement) {
+  if (photoCherchee || typeof Image === "undefined") return;
+  photoCherchee = true;
+  let i = 0;
+  const essayer = () => {
+    if (i >= PHOTOS_DECOR.length) return; // pas de photo : décor dessiné
+    const img = new Image();
+    img.onload = () => { photoDecor = img; decorCache = null; auChargement && auChargement(); };
+    img.onerror = () => { i++; essayer(); };
+    img.src = PHOTOS_DECOR[i];
+  };
+  essayer();
+}
+
+// Photo recadrée en « cover », légèrement réchauffée pour coller au soir
+function dessinerPhotoDecor(cx, W, H) {
+  const img = photoDecor;
+  const k = Math.max(W / img.width, H / img.height);
+  const w = img.width * k, h = img.height * k;
+  cx.drawImage(img, (W - w) / 2, (H - h) * 0.6, w, h);
+  const chaud = cx.createLinearGradient(0, 0, 0, H);
+  chaud.addColorStop(0, "rgba(255,206,130,0.10)");
+  chaud.addColorStop(1, "rgba(255,180,90,0.20)");
+  cx.fillStyle = chaud; cx.fillRect(0, 0, W, H);
+}
+
+// Place de village : ciel de fin d'après-midi, collines, façades ocre,
+// voûte de platanes. Aléa entièrement reproductible (générateur ensemencé).
+function dessinerDecorStylise(cx, W, H) {
+  let seed = 20260917;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  const ciel = cx.createLinearGradient(0, 0, 0, H);
+  ciel.addColorStop(0, "#3f95cd");
+  ciel.addColorStop(0.45, "#8ec8e6");
+  ciel.addColorStop(0.8, "#e7d2a6");
+  ciel.addColorStop(1, "#dcc191");
+  cx.fillStyle = ciel; cx.fillRect(0, 0, W, H);
+
+  // soleil bas et son halo
+  const sx = W * 0.8, sy = H * 0.42;
+  const halo = cx.createRadialGradient(sx, sy, 1, sx, sy, H * 1.1);
+  halo.addColorStop(0, "rgba(255,247,209,0.95)");
+  halo.addColorStop(0.16, "rgba(255,227,152,0.45)");
+  halo.addColorStop(0.5, "rgba(255,207,131,0.16)");
+  halo.addColorStop(1, "rgba(255,196,120,0)");
+  cx.fillStyle = halo; cx.fillRect(0, 0, W, H);
+
+  // collines de l'arrière-pays
+  const colline = (base, phase, couleur) => {
+    cx.fillStyle = couleur;
+    cx.beginPath();
+    cx.moveTo(0, H);
+    cx.lineTo(0, base);
+    for (let x = 0; x <= W; x += 8) {
+      cx.lineTo(x, base - Math.sin(x / 95 + phase) * 6 - Math.sin(x / 31 + phase * 2) * 2.5);
+    }
+    cx.lineTo(W, H); cx.closePath(); cx.fill();
+  };
+  colline(H * 0.5, 0.6, "#8fa9b2");
+  colline(H * 0.58, 2.1, "#6b8a7e");
+
+  // rangée de façades et toits de tuiles
+  const solVillage = H * 0.79;
+  const facades = ["#e6cfa4", "#d9b98b", "#cfa878", "#e9d9b6", "#c99a6c"];
+  let x = -16, k = 0;
+  while (x < W + 12) {
+    const w = 24 + Math.floor(rnd() * 24);
+    const h = 13 + Math.floor(rnd() * 16);
+    const y = solVillage - h;
+    cx.fillStyle = facades[k++ % facades.length];
+    cx.fillRect(x, y, w, h);
+    cx.fillStyle = "rgba(90,70,45,0.16)"; // façade à l'ombre, côté opposé au soleil
+    cx.fillRect(x, y, w * 0.35, h);
+    cx.fillStyle = "#a8552f";
+    cx.beginPath();
+    cx.moveTo(x - 3, y); cx.lineTo(x + w + 3, y);
+    cx.lineTo(x + w + 1, y - 4); cx.lineTo(x - 1, y - 4);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "rgba(58,46,30,0.5)";
+    for (let fx = x + 5; fx < x + w - 6; fx += 10) {
+      for (let fy = y + 5; fy < y + h - 6; fy += 10) cx.fillRect(fx, fy, 3.5, 5);
+    }
+    x += w + 2;
+  }
+
+  // sol de la place
+  const sol = cx.createLinearGradient(0, solVillage - 2, 0, H);
+  sol.addColorStop(0, "#c9ab77");
+  sol.addColorStop(1, "#ac8b5c");
+  cx.fillStyle = sol; cx.fillRect(0, solVillage - 1, W, H - solVillage + 1);
+
+  // platanes : ombre au sol, tronc tacheté, puis couronne de feuillage
+  const troncs = [W * 0.04, W * 0.24, W * 0.46, W * 0.68, W * 0.9];
+  const hautTronc = H * 0.3;
+  for (const tx of troncs) {
+    cx.fillStyle = "rgba(60,48,26,0.25)";
+    cx.beginPath(); cx.ellipse(tx - 10, solVillage + 4, 16, 3.4, 0, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = "#c2ac82";
+    cx.beginPath();
+    cx.moveTo(tx - 5, solVillage + 5); cx.lineTo(tx - 3, hautTronc);
+    cx.lineTo(tx + 3, hautTronc); cx.lineTo(tx + 5, solVillage + 5);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "rgba(96,82,52,0.55)"; // écorce tachetée du platane
+    for (let i = 0; i < 9; i++) {
+      const ty = hautTronc + rnd() * (solVillage - hautTronc);
+      cx.beginPath();
+      cx.ellipse(tx - 2.4 + rnd() * 4.6, ty, 1.5, 2.4, 0, 0, Math.PI * 2);
+      cx.fill();
+    }
+    cx.fillStyle = "rgba(70,58,34,0.3)"; // côté ombre du tronc
+    cx.fillRect(tx - 5, hautTronc, 2.2, solVillage - hautTronc + 5);
+  }
+  // couronnes : elles se rejoignent en voûte mais laissent passer le ciel
+  const couronne = (tx, cy, rayon, couleur, n) => {
+    cx.fillStyle = couleur;
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2, d = rnd();
+      const fx = tx + Math.cos(a) * d * rayon * 1.5;
+      const fy = cy + Math.sin(a) * d * rayon * 0.75;
+      cx.beginPath();
+      cx.ellipse(fx, fy, rayon * (0.3 + rnd() * 0.3), rayon * (0.24 + rnd() * 0.22), rnd() * 3, 0, Math.PI * 2);
+      cx.fill();
+    }
+  };
+  for (const tx of troncs) {
+    couronne(tx, H * 0.17, 20, "#39592b", 14);
+    couronne(tx - 3, H * 0.13, 17, "#4f7433", 12);
+    couronne(tx + 4, H * 0.09, 13, "#77a044", 9); // touches de soleil sur le dessus
+  }
+}
+
+// Ombre de platane projetée sur le terrain : une couronne de folioles
+// percée de taches de lumière, pré-rendue une fois puis posée le long du
+// terrain. Même générateur ensemencé : identique sur tous les appareils.
+const OMBRE_R = 120;
+let ombreCache = null;
+
+function textureOmbrePlatane() {
+  if (ombreCache) return ombreCache;
+  const R = OMBRE_R;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = R * 2;
+  const cx = cv.getContext("2d");
+  let seed = 991733;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const flou = f => { if ("filter" in cx) cx.filter = f; }; // bords doux si le navigateur sait
+
+  // 1. l'ombre du tronc arrive du bord du terrain
+  flou("blur(4px)");
+  cx.fillStyle = "rgba(62,52,30,0.28)";
+  cx.beginPath();
+  cx.moveTo(0, R - 15); cx.lineTo(R * 0.7, R - 6);
+  cx.lineTo(R * 0.7, R + 6); cx.lineTo(0, R + 15);
+  cx.closePath(); cx.fill();
+
+  // 2. masse générale de la couronne, fondue sur les bords
+  flou("blur(9px)");
+  const masse = cx.createRadialGradient(R, R, R * 0.1, R, R, R);
+  masse.addColorStop(0, "rgba(62,52,30,0.20)");
+  masse.addColorStop(0.65, "rgba(62,52,30,0.15)");
+  masse.addColorStop(1, "rgba(62,52,30,0)");
+  cx.fillStyle = masse;
+  cx.beginPath(); cx.arc(R, R, R, 0, Math.PI * 2); cx.fill();
+
+  // 3. folioles : le grain du feuillage
+  flou("blur(1.6px)");
+  for (let i = 0; i < 420; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = Math.pow(rnd(), 0.55) * R;
+    const rx = 3 + rnd() * 7;
+    cx.fillStyle = `rgba(58,48,26,${(0.07 + rnd() * 0.09).toFixed(3)})`;
+    cx.beginPath();
+    cx.ellipse(R + Math.cos(a) * d, R + Math.sin(a) * d, rx, rx * (0.45 + rnd() * 0.4), rnd() * Math.PI, 0, Math.PI * 2);
+    cx.fill();
+  }
+
+  // 4. taches de soleil entre les feuilles, plus larges vers le bord
+  cx.globalCompositeOperation = "destination-out";
+  flou("blur(1.4px)");
+  for (let i = 0; i < 260; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = Math.sqrt(rnd()) * R * 1.02;
+    const bord = d / R;
+    const rx = 1.8 + rnd() * (2.5 + bord * 7);
+    cx.fillStyle = `rgba(0,0,0,${(0.34 + bord * 0.6).toFixed(3)})`;
+    cx.beginPath();
+    cx.ellipse(R + Math.cos(a) * d, R + Math.sin(a) * d, rx, rx * (0.5 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2);
+    cx.fill();
+  }
+  cx.globalCompositeOperation = "source-over";
+  flou("none");
+  ombreCache = cv;
+  return cv;
+}
+
+// Bande pré-rendue une fois : dessinée à chaque image, elle doit être bon marché
+function bandeDecor() {
+  if (decorCache) return decorCache;
+  const cv = document.createElement("canvas");
+  cv.width = DECOR_W; cv.height = SKY_H;
+  const cx = cv.getContext("2d");
+  if (photoDecor) dessinerPhotoDecor(cx, DECOR_W, SKY_H);
+  else dessinerDecorStylise(cx, DECOR_W, SKY_H);
+  const fondu = cx.createLinearGradient(0, SKY_H - 18, 0, SKY_H);
+  fondu.addColorStop(0, "rgba(58,44,24,0)");
+  fondu.addColorStop(1, "rgba(58,44,24,0.38)");
+  cx.fillStyle = fondu; cx.fillRect(0, SKY_H - 18, DECOR_W, 18);
+  decorCache = cv;
+  return cv;
+}
+
+// ---------- Sable -------------------------------------------------
+// Le sol est peint en deux calques pré-rendus : une tuile de gravier
+// répétable (le grain, vu de près) et une carte de nuances étirée sur
+// tout le terrain (zones claires, terre tassée, traces de râteau).
+// Générateurs ensemencés : même terrain partout, aucun scintillement.
+
+const TUILE_SABLE = 256;
+let tuileCache = null, motifSable = null, motifCtx = null, nuancesCache = null;
+
+function tuileSable() {
+  if (tuileCache) return tuileCache;
+  const N = TUILE_SABLE;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = N;
+  const cx = cv.getContext("2d");
+  let seed = 314159;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  cx.fillStyle = "#d7c397";
+  cx.fillRect(0, 0, N, N);
+  // poussière : le grain fin de la terre battue
+  const teintes = ["rgba(178,152,107,0.40)", "rgba(236,224,192,0.38)",
+                   "rgba(150,124,84,0.30)", "rgba(208,190,148,0.45)"];
+  for (let i = 0; i < 34000; i++) {
+    cx.fillStyle = teintes[Math.floor(rnd() * teintes.length)];
+    cx.fillRect(Math.floor(rnd() * N), Math.floor(rnd() * N), 1, 1);
+  }
+  // graviers : petits, nombreux et peu contrastés ; chacun reposé de
+  // l'autre côté des bords pour que la tuile se répète sans couture
+  for (let i = 0; i < 520; i++) {
+    const x = rnd() * N, y = rnd() * N;
+    const r = 0.8 + rnd() * 1.7, ang = rnd() * Math.PI;
+    const clair = `rgba(233,221,189,${(0.3 + rnd() * 0.28).toFixed(2)})`;
+    const eclat = `rgba(252,246,226,${(0.18 + rnd() * 0.2).toFixed(2)})`;
+    for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+      if (x + dx < -4 || x + dx > N + 4 || y + dy < -4 || y + dy > N + 4) continue;
+      cx.fillStyle = "rgba(122,94,52,0.2)"; // le caillou pose sa petite ombre
+      cx.beginPath();
+      cx.ellipse(x + dx + 0.8, y + dy + 0.9, r, r * 0.74, ang, 0, Math.PI * 2);
+      cx.fill();
+      cx.fillStyle = clair;
+      cx.beginPath();
+      cx.ellipse(x + dx, y + dy, r, r * 0.72, ang, 0, Math.PI * 2);
+      cx.fill();
+      cx.fillStyle = eclat; // le soleil accroche la face tournée vers lui
+      cx.beginPath();
+      cx.ellipse(x + dx - r * 0.28, y + dy - r * 0.26, r * 0.45, r * 0.32, ang, 0, Math.PI * 2);
+      cx.fill();
+    }
+  }
+  // quelques cailloux plus gros, posés çà et là : ils donnent l'échelle
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * N, y = rnd() * N;
+    const r = 2.2 + rnd() * 1.7, ang = rnd() * Math.PI;
+    for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+      if (x + dx < -8 || x + dx > N + 8 || y + dy < -8 || y + dy > N + 8) continue;
+      cx.fillStyle = "rgba(112,86,48,0.26)";
+      cx.beginPath();
+      cx.ellipse(x + dx + 1.3, y + dy + 1.4, r, r * 0.7, ang, 0, Math.PI * 2);
+      cx.fill();
+      const g = cx.createRadialGradient(x + dx - r * 0.3, y + dy - r * 0.3, r * 0.1, x + dx, y + dy, r);
+      g.addColorStop(0, "rgba(250,244,224,0.75)");
+      g.addColorStop(1, "rgba(196,176,134,0.6)");
+      cx.fillStyle = g;
+      cx.beginPath();
+      cx.ellipse(x + dx, y + dy, r, r * 0.72, ang, 0, Math.PI * 2);
+      cx.fill();
+    }
+  }
+  tuileCache = cv;
+  return cv;
+}
+
+function motifDuSable(ctx) {
+  if (motifSable && motifCtx === ctx) return motifSable;
+  motifCtx = ctx;
+  motifSable = ctx.createPattern(tuileSable(), "repeat");
+  return motifSable;
+}
+
+// Nuances du terrain, rendues en basse définition puis étirées : elles
+// cassent la répétition de la tuile sans coûter cher.
+function nuancesDuSable(T) {
+  const cle = T.W + "x" + T.L;
+  if (nuancesCache && nuancesCache.cle === cle) return nuancesCache.cv;
+  const w = Math.max(48, Math.round(T.W / 8)), h = Math.max(48, Math.round(T.L / 8));
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d");
+  let seed = 4242 + T.L;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  const taches = (rgb, a, n, rmin, rmax) => {
+    for (let i = 0; i < n; i++) {
+      const x = rnd() * w, y = rnd() * h, r = rmin + rnd() * (rmax - rmin);
+      const g = cx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${rgb},${a})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      cx.fillStyle = g;
+      cx.beginPath(); cx.arc(x, y, r, 0, Math.PI * 2); cx.fill();
+    }
+  };
+  const n = Math.max(6, Math.round((w * h) / 1400));
+  taches("255,246,220", 0.2, n, w * 0.12, w * 0.45); // zones sèches, poussiéreuses
+  taches("108,88,54", 0.15, n, w * 0.1, w * 0.4);     // terre tassée par les passages
+  taches("150,126,86", 0.1, n * 2, w * 0.04, w * 0.14);
+
+  // traces de râteau : le terrain a été préparé avant la partie
+  cx.lineWidth = 1;
+  for (let i = 0; i < Math.round(h / 9); i++) {
+    const y = rnd() * h;
+    cx.strokeStyle = rnd() > 0.5 ? "rgba(255,248,226,0.07)" : "rgba(104,84,52,0.06)";
+    cx.beginPath();
+    cx.moveTo(0, y);
+    cx.bezierCurveTo(w * 0.3, y + (rnd() - 0.5) * 5, w * 0.7, y + (rnd() - 0.5) * 5, w, y + (rnd() - 0.5) * 4);
+    cx.stroke();
+  }
+  nuancesCache = { cle, cv };
+  return cv;
+}
+
 // ---------- Dessin ------------------------------------------------
 
-function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
+export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   const list = bodiesOverride || makeBodies(st);
   const START = departDe(T);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.clearRect(0, 0, VIEW_W, CANVAS_H);
 
   // Caméra du grand terrain : elle suit ce qui bouge, sinon le cochonnet
   let cam = null;
@@ -400,26 +746,44 @@ function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
       x: Math.max(VIEW_W / 2, Math.min(T.W - VIEW_W / 2, foc.x)),
       y: Math.max(VIEW_H / 2, Math.min(T.L - VIEW_H / 2, foc.y)),
     };
-    ctx.setTransform(1, 0, 0, 1, VIEW_W / 2 - cam.x, VIEW_H / 2 - cam.y);
   }
 
-  // sable
-  ctx.fillStyle = "#d8c49a";
-  ctx.fillRect(0, 0, T.W, T.L);
-  let seed = 7;
-  const prand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  ctx.fillStyle = "rgba(120,98,60,0.18)";
-  const nGrains = T.camera ? 1400 : 260;
-  for (let i = 0; i < nGrains; i++) {
-    ctx.fillRect(prand() * T.W, prand() * T.L, 1.6, 1.6);
-  }
-  // ombres de platanes le long du terrain
-  ctx.fillStyle = "rgba(40, 50, 25, 0.10)";
+  // bande de décor : elle glisse doucement quand la caméra se déplace
+  const glisse = cam ? (cam.x / T.W - 0.5) : 0;
+  ctx.drawImage(bandeDecor(), -(DECOR_W - VIEW_W) / 2 - glisse * (DECOR_W - VIEW_W), 0);
+
+  // le terrain vit sous la bande de décor
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, SKY_H, VIEW_W, VIEW_H);
+  ctx.clip();
+  if (cam) ctx.setTransform(1, 0, 0, 1, VIEW_W / 2 - cam.x, SKY_H + VIEW_H / 2 - cam.y);
+  else ctx.setTransform(1, 0, 0, 1, 0, SKY_H);
+
+  // sable : grain répétable, puis nuances du terrain par-dessus.
+  // On ne peint que la portion visible : le grand terrain fait 640 x 2750.
+  const vue = cam
+    ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2, w: VIEW_W, h: VIEW_H }
+    : { x: 0, y: 0, w: T.W, h: T.L };
+  ctx.fillStyle = motifDuSable(ctx);
+  ctx.fillRect(vue.x, vue.y, vue.w, vue.h);
+  const nu = nuancesDuSable(T);
+  ctx.drawImage(nu,
+    (vue.x / T.W) * nu.width, (vue.y / T.L) * nu.height,
+    (vue.w / T.W) * nu.width, (vue.h / T.L) * nu.height,
+    vue.x, vue.y, vue.w, vue.h);
+  // ombres de platanes le long du terrain : le soleil est bas, elles
+  // s'étirent vers l'intérieur depuis les arbres plantés sur les côtés
+  const texOmbre = textureOmbrePlatane();
   for (let y = 80; y < T.L; y += 430) {
     const gauche = (Math.floor(y / 430) % 2) === 0;
-    ctx.beginPath();
-    ctx.ellipse(gauche ? 30 : T.W - 30, y, 95, 55, 0.5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.save();
+    ctx.translate(gauche ? 58 : T.W - 58, y);
+    ctx.scale(gauche ? 1 : -1, 1);
+    ctx.rotate(0.16);
+    ctx.scale(1.08, 0.62);
+    ctx.drawImage(texOmbre, -OMBRE_R, -OMBRE_R);
+    ctx.restore();
   }
   // bordure et rond de lancer
   ctx.strokeStyle = "#efe6cf"; ctx.lineWidth = 2;
@@ -469,11 +833,21 @@ function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     }
   }
 
+  ctx.restore();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // ombre portée des platanes sur le haut du terrain
+  const ombre = ctx.createLinearGradient(0, SKY_H, 0, SKY_H + 26);
+  ombre.addColorStop(0, "rgba(46,36,18,0.30)");
+  ombre.addColorStop(1, "rgba(46,36,18,0)");
+  ctx.fillStyle = ombre;
+  ctx.fillRect(0, SKY_H, VIEW_W, 26);
+
   // mini-carte du grand terrain
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const mw = 40, mh = Math.round(mw * T.L / T.W);
-    const mx = VIEW_W - mw - 6, my = 6, s = mw / T.W;
+    const mx = VIEW_W - mw - 6, my = SKY_H + 6, s = mw / T.W;
     ctx.globalAlpha = 0.92;
     ctx.fillStyle = "#cdb98f";
     ctx.fillRect(mx, my, mw, mh);
@@ -536,6 +910,7 @@ export default function Petanque() {
   const [notice, setNotice] = useState("");
   const [animating, setAnimating] = useState(false);
   const [, setTic] = useState(0); // horloge du compte à rebours
+  const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
@@ -562,6 +937,9 @@ export default function Petanque() {
   useEffect(() => { if (myTurn) randomizeAim(); }, [myTurn, randomizeAim]);
 
   useEffect(() => { meIdRef.current = meId; }, [meId]);
+
+  // Photo de décor optionnelle : cherchée une fois, elle remplace le dessin
+  useEffect(() => { chargerPhotoDecor(() => setDecorPret(x => x + 1)); }, []);
 
   useEffect(() => { reglerIvresseCigales(ivresseNiveau); }, [ivresseNiveau]);
 
@@ -715,7 +1093,7 @@ export default function Petanque() {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
     drawField(cv.getContext("2d"), game, null, myTurn ? { angle } : null, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T]);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -1106,7 +1484,7 @@ export default function Petanque() {
               filter: `blur(${Math.min(2.2, ivresseNiveau * 0.35)}px) sepia(${Math.min(0.5, ivresseNiveau * 0.08)}) saturate(${1 + ivresseNiveau * 0.06})`,
             } : {}),
           }}>
-            <canvas ref={canvasRef} width={VIEW_W} height={VIEW_H} style={S.canvas} />
+            <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas} />
           </div>
           {myTurn && !animating && (
             <div style={S.card}>
