@@ -1310,6 +1310,62 @@ const CSS_IVRESSE = `
   100% { transform: scale(1); opacity: 1; }
 }`;
 
+// ---------- Écran d'aide ------------------------------------------
+// Les nouveaux arrivent par un lien, sans rien connaître : tout ce qu'il
+// faut savoir tient sur une page, accessible de partout par le « ? ».
+
+function PanneauAide({ fermer }) {
+  const S = styles;
+  const section = (titre, texte) => (
+    <div key={titre}>
+      <h3 style={S.aideTitre2}>{titre}</h3>
+      <p style={S.aideTexte}>{texte}</p>
+    </div>
+  );
+  return (
+    <div style={S.aideFond} onClick={fermer}>
+      <div style={S.aideCarte} onClick={e => e.stopPropagation()}>
+        <h2 style={S.aideTitre}>La pétanque, en deux minutes</h2>
+        {section("Le but",
+          `Le premier à ${TARGET} points gagne. À chaque mène, l'équipe qui a la boule
+           la plus proche du cochonnet marque un point par boule mieux placée que la
+           meilleure boule adverse.`)}
+        {section("Une mène",
+          `Le premier joueur lance le cochonnet — assez loin, sinon il faut recommencer.
+           Ensuite joue toujours l'équipe qui n'a pas le point. Quand il n'y a plus de
+           boules, on compte.`)}
+        {section("Pointer ou tirer",
+          `Pointer : la boule roule et vient se coucher près du cochonnet. Tirer : elle
+           vole jusqu'à son point de chute et frappe sec — c'est comme ça qu'on fait un
+           carreau.`)}
+        {section("Les réglages",
+          `Direction et force sont remélangées avant chaque coup et les chiffres restent
+           cachés : ça se juge à l'œil, comme au vrai jeu. Quinze secondes par lancer,
+           après quoi la boule part toute seule.`)}
+        {section("Boule morte",
+          `Une boule qui franchit la ligne du fond est perdue. Sur les côtés, elle ne
+           meurt que si elle sort entièrement.`)}
+        {section("Les terrains",
+          `Classique : tout le terrain tient à l'écran. Long 10 m : la caméra suit
+           l'action et la mini-carte montre l'ensemble.`)}
+        {section("Les bots 🤖",
+          `L'hôte peut ajouter des joueurs artificiels — Fanny la débutante, le Pointeur,
+           ou le Fada chirurgical — dans n'importe quelle équipe : on peut jouer seul. Un
+           joueur qui laisse filer trois lancers peut être remplacé par un bot, et
+           reprendre sa place dès qu'il revient.`)}
+        {section("La tournée 🍹",
+          `L'équipe qui gagne une mène offre une tournée de pastis à qui elle veut. Trois
+           mènes d'affilée et les vainqueurs trinquent aussi. Chaque verre trouble un peu
+           plus la vue et la main. L'équipe qui finit à zéro est Fanny.`)}
+        {section("À plusieurs",
+          `Jusqu'à 9 joueurs et 3 équipes. Tout le monde entre le même code de partie,
+           chacun sur son appareil, et chaque lancer se rejoue en direct chez les autres.`)}
+        <button style={S.btn} onClick={fermer}>Allez, on joue</button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Composant principal -----------------------------------
 
 export default function Petanque() {
@@ -1330,6 +1386,7 @@ export default function Petanque() {
   const [, setTic] = useState(0); // horloge du compte à rebours
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
+  const [aide, setAide] = useState(false);
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const replayedRef = useRef(null); // id du dernier lancer déjà animé sur cet appareil
@@ -1872,10 +1929,14 @@ export default function Petanque() {
   }
 
   const boutonsSon = (
-    <div style={{ display: "flex", gap: 8 }}>
-      <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
-      <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
-    </div>
+    <>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button style={S.sndBtn} onClick={basculerCigales} title="Cigales">{cigales ? "🦗" : "🔇"}</button>
+        <button style={ambiance ? S.sndBtn : { ...S.sndBtn, opacity: 0.45 }} onClick={basculerAmbiance} title="Musique d'ambiance">🎵</button>
+        <button style={S.sndBtn} onClick={() => setAide(true)} title="Règles du jeu">?</button>
+      </div>
+      {aide && <PanneauAide fermer={() => setAide(false)} />}
+    </>
   );
 
   const restantes = t => game && game.mene
@@ -2224,4 +2285,19 @@ const styles = {
     textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.4,
   },
   range: { width: "100%" },
+  aideFond: {
+    position: "fixed", inset: 0, zIndex: 60, background: "rgba(22, 27, 14, 0.88)",
+    overflowY: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center",
+    padding: "16px 12px", boxSizing: "border-box",
+  },
+  aideCarte: {
+    background: "#333b28", borderRadius: 12, padding: 16, width: "100%", maxWidth: 400,
+    display: "flex", flexDirection: "column", gap: 10, boxSizing: "border-box",
+    border: "1px solid #4a5438",
+  },
+  aideTitre: {
+    fontFamily: "Georgia, serif", fontSize: 21, margin: 0, color: "#f6c324", textAlign: "center",
+  },
+  aideTitre2: { fontSize: 14, margin: "0 0 2px", color: "#8fd4f0" },
+  aideTexte: { fontSize: 13, lineHeight: 1.5, margin: 0, opacity: 0.9 },
 };
