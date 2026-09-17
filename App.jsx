@@ -31,7 +31,9 @@ export const TERRAINS = {
     airTir: p => Math.max(60, 140 + (p / 100) * 360 - 26),
     cochMin: 170, skidSeuil: 4, skidMu: 0.94,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
-    volCoch: 0, cochVif: 1, // cochonnet : part en vol, et vivacité relative aux boules
+    // Cochonnet : plus léger, il part en cloche plus courte et va un peu
+    // plus loin que la boule à force égale — la différence est assumée
+    volCoch: 0.4, cochVif: 1.1,
   },
   long: {
     nom: "Long 10 m", W: 640, L: 2750,
@@ -42,7 +44,7 @@ export const TERRAINS = {
     airTir: p => Math.max(150, 300 + (p / 100) * 2300 - 60),
     cochMin: 1400, skidSeuil: 12, skidMu: 0.9,
     volPoint: 0.5,
-    volCoch: 0, cochVif: 1,
+    volCoch: 0.4, cochVif: 1.1,
   },
 };
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
