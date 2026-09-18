@@ -232,10 +232,10 @@ export function stepPhysics(bodies, T) {
         if (b.y < b.r) { b.y = b.r; b.vy *= -0.5; }
         if (b.y > T.L - b.r) { b.y = T.L - b.r; b.vy *= -0.5; }
       } else {
-        // Ligne de fond franchie = boule morte ; côtés : morte seulement si
-        // entièrement sortie. Elle garde sa vitesse et roule encore, sans
+        // Une boule qui touche une ligne — fond ou côtés, tracées à 4 px du
+        // bord — est morte. Elle garde sa vitesse et roule encore, sans
         // plus toucher personne, jusqu'à buter sur la planche hors-jeu.
-        if (!b.dead && (b.y < b.r + 4 || b.x < -b.r || b.x > T.W + b.r || b.y > T.L + b.r)) b.dead = true;
+        if (!b.dead && (b.y < b.r + 4 || b.x < b.r + 4 || b.x > T.W - b.r - 4 || b.y > T.L + b.r)) b.dead = true;
         if (b.dead) {
           const xmin = -HORS_G + b.r, xmax = T.W + HORS_G - b.r;
           const ymin = -HORS_H + b.r, ymax = T.L + HORS_B - b.r;
@@ -1492,6 +1492,8 @@ const ICONES = {
   horloge: [{ c: [12, 13, 8] }, "M12 9v4l3 2", "M9 2h6"],
   robot: [{ r: [5, 8, 14, 11, 2] }, "M12 8V5", { c: [12, 4, 1] }, { p: [9.5, 13] }, { p: [14.5, 13] }, "M9 16.5h6", "M5 12H3", "M19 12h2"],
   oeil: [{ c: [12, 12, 3] }, "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"],
+  pleinEcran: ["M4 9V4h5", "M20 9V4h-5", "M4 15v5h5", "M20 15v5h-5"],
+  quitterPleinEcran: ["M9 4v5H4", "M15 4v5h5", "M9 20v-5H4", "M15 20v-5h5"],
 };
 
 function Ico({ nom, taille = 20, couleur = NUIT, epaisseur = 2 }) {
@@ -1587,22 +1589,32 @@ function Confettis({ graine }) {
   );
 }
 
+// L'ivresse par paliers : le flou et le tangage oscillent entre net et
+// trouble. Les fenêtres de netteté raccourcissent et s'espacent à chaque
+// tournée — niveau 1 souvent net, niveau 6 presque jamais. CSS seulement.
 const CSS_IVRESSE = `
 @keyframes tanguer {
   0% { transform: rotate(-0.7deg) translateX(-3px); }
   50% { transform: rotate(0.7deg) translateX(3px); }
   100% { transform: rotate(-0.7deg) translateX(-3px); }
 }
-@keyframes monterVerre {
-  from { transform: translateY(70px) rotate(-8deg); opacity: 0; }
-  to { transform: translateY(0) rotate(0); opacity: 1; }
-}
 @keyframes trinquer {
   0% { transform: scale(0.3); opacity: 0; }
   45% { transform: scale(1.12); opacity: 1; }
   65% { transform: scale(0.96); }
   100% { transform: scale(1); opacity: 1; }
+}
+` + [1, 2, 3, 4, 5, 6].map(n => {
+  const net = Math.max(3, 66 - n * 12);                  // part du cycle passée net (%)
+  const flou = Math.min(2.2, n * 0.35).toFixed(2), sepia = Math.min(0.5, n * 0.08).toFixed(2), sat = (1 + n * 0.06).toFixed(2);
+  const trouble = `filter: blur(${flou}px) sepia(${sepia}) saturate(${sat});`;
+  return `@keyframes clarte${n} {
+  0% { filter: none; } ${net}% { filter: none; } ${Math.min(99, net + 8)}% { ${trouble} } 96% { ${trouble} } 100% { filter: none; }
 }`;
+}).join("\n");
+const ivresseStyle = n => n ? {
+  animation: `tanguer ${Math.max(2.2, 5.5 - n * 0.6)}s ease-in-out infinite, clarte${Math.min(6, n)} ${6 + n * 1.5}s ease-in-out infinite`,
+} : {};
 
 // ---------- Mini-didacticiel du lancer ----------------------------
 // À la première partie sur l'appareil : trois étapes, un tap pour passer.
@@ -1676,8 +1688,8 @@ function PanneauAide({ fermer, revoirGeste }) {
            l'œil, comme au vrai jeu. Vingt secondes par lancer, après quoi la boule
            part toute seule.`)}
         {section("Boule morte",
-          `Une boule qui franchit la ligne du fond est perdue. Sur les côtés, elle ne
-           meurt que si elle sort entièrement.`)}
+          `Une boule qui touche une ligne — au fond comme sur les côtés — est morte :
+           elle finit sa course hors du terrain et ne compte plus.`)}
         {section("Les terrains",
           `Classique : tout le terrain tient à l'écran. Long 10 m : la caméra suit
            l'action et la mini-carte montre l'ensemble.`)}
@@ -1713,7 +1725,6 @@ export default function Petanque() {
   const [mode, setMode] = useState("point"); // point | tir
   const [cigales, setCigales] = useState(false);
   const [ambiance, setAmbiance] = useState(false);
-  const [tourneeAnim, setTourneeAnim] = useState(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [animating, setAnimating] = useState(false);
@@ -1721,6 +1732,7 @@ export default function Petanque() {
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
   const [aide, setAide] = useState(false);
+  const [cri, setCri] = useState(null); // cris du Sud et annonces de tournée, même bandeau
   // Mini-didacticiel : à la première partie sur cet appareil
   const [tuto, setTuto] = useState(false);
   useEffect(() => {
@@ -1738,7 +1750,6 @@ export default function Petanque() {
   // Le cri du Sud : quand l'équipe qui tient le point change (premier
   // point de la mène compris), on le crie — pas sur le lancer qui termine
   // la mène, la pop-in prend le relais. Cri choisi par rotation.
-  const [cri, setCri] = useState(null);
   // Largeur interne du canvas épousant le cadre : mesurée au chargement
   // et à chaque changement de taille
   const cadreRef = useRef(null);
@@ -1848,11 +1859,17 @@ export default function Petanque() {
 
   // Arrivée par un lien ?partie=CODE : le code est déjà rempli. Sinon on en
   // propose un, pour que créer une partie ne demande qu'un prénom.
+  // Arrivée par un lien ?partie=CODE : le code est déjà là, on ne propose
+  // que de rejoindre. Sinon : créer une partie (code tiré), ou rejoindre
+  // avec un code.
+  const [codeDuLien, setCodeDuLien] = useState(null);
+  const [saisirCode, setSaisirCode] = useState(false);
   useEffect(() => {
     let dansLien = null;
     try { dansLien = new URLSearchParams(location.search).get("partie"); } catch {}
-    setCode(c => c || (dansLien ? dansLien.toUpperCase() : codeAleatoire()));
+    if (dansLien) { setCodeDuLien(dansLien.toUpperCase()); setCode(dansLien.toUpperCase()); }
   }, []);
+  const creerPartie = () => { const c = codeAleatoire(); setCode(c); join(c); };
 
   // Traces dans le sable : terrain neuf au début de la partie, ratissé
   // entre deux mènes (il en reste un souvenir).
@@ -1870,23 +1887,17 @@ export default function Petanque() {
   // Le son ne part que sur demande : les boutons cigales et musique sont les seuls déclencheurs
   // (décision des joueurs de la partie test).
 
-  // Une tournée vient d'être offerte : grande animation chez les arrosés,
-  // simple annonce chez les autres
+  // Une tournée vient d'être offerte : le même bandeau que les cris du Sud
   useEffect(() => {
     const lt = game?.lastTournee;
     if (!lt || lt.id === seenTourneeRef.current) return;
     seenTourneeRef.current = lt.id;
-    if (me && lt.to === me.team) {
-      setTourneeAnim(lt.surprise
-        ? "SURPRISE ! Trois mènes d'affilée… vous buvez pour accompagner vos amis !"
-        : `${TEAM_NAMES[lt.from]} vous offre une tournée de pastis — santé !`);
-      setTimeout(() => setTourneeAnim(null), 3400);
-    } else {
-      setNotice(lt.surprise
-        ? `${TEAM_NAMES[lt.to]} enchaîne trois mènes — tournée surprise, ils trinquent aussi !`
-        : `Tournée de pastis : ${TEAM_NAMES[lt.from]} régale ${TEAM_NAMES[lt.to]} !`);
-      setTimeout(() => setNotice(""), 3400);
-    }
+    const cible = TEAM_NAMES[lt.to].replace("Équipe ", "").toUpperCase();
+    setCri(me && lt.to === me.team
+      ? (lt.surprise ? "SURPRISE ! Trois mènes d'affilée… vous trinquez aussi !" : `Santé ! ${TEAM_NAMES[lt.from].replace("Équipe ", "").toUpperCase()} vous offre la tournée`)
+      : (lt.surprise ? `${cible} enchaîne trois mènes — tournée surprise !` : `Tournée de pastis : ${cible} régale`));
+    const t = setTimeout(() => setCri(null), 3200);
+    return () => clearTimeout(t);
   }, [game, me]);
 
   // --- synchronisation -------------------------------------------
@@ -2130,8 +2141,8 @@ export default function Petanque() {
   }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue]);
 
   // --- entrée -----------------------------------------------------
-  async function join() {
-    const n = name.trim(), c = code.trim().toUpperCase();
+  async function join(codeForce) {
+    const n = name.trim(), c = (typeof codeForce === "string" ? codeForce : code).trim().toUpperCase();
     if (!n || !c) { setNotice("Entre ton prénom et un code de partie."); return; }
     setBusy(true); setNotice(""); setCode(c);
     let g = await loadGame(c);
@@ -2412,12 +2423,12 @@ export default function Petanque() {
   // elle existe, sinon le presse-papiers, et à défaut le lien affiché.
   const partager = async () => {
     const c = code.trim().toUpperCase();
-    if (!c) { setNotice("Choisis d'abord un code de partie."); return; }
+    if (!c) { setNotice("Crée d'abord la partie, ou entre un code."); return; }
     const url = lienPartie(c);
     try {
       if (navigator.share) { await navigator.share({ title: "Pétanque en ligne", text: `Rejoins la partie ${c} !`, url }); return; }
       await navigator.clipboard.writeText(url);
-      setNotice("Lien copié — envoie-le à tes amis.");
+      setNotice("Lien copié !");
     } catch (e) {
       if (e && e.name === "AbortError") return; // partage annulé
       setNotice(url);
@@ -2516,6 +2527,15 @@ export default function Petanque() {
   // dernier coup, quand il y en a un et que rien ne bouge) et ⌂.
   // Les outils : rejouer (en partie, quand il y a un coup à revoir et que
   // rien ne bouge), cigales, musique, aide, maison (en partie).
+  // Plein écran : Android et bureau savent, iOS Safari non — le bouton
+  // n'apparaît que là où ça marche
+  const pleinEcranPossible = typeof document !== "undefined" && !!document.fullscreenEnabled;
+  const basculerPleinEcran = () => {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch {}
+  };
   const outils = (enPartie, grand) => {
     const cl = "bi" + (grand ? " g" : enPartie ? " p" : "");
     const t = grand ? 22 : enPartie ? 18 : 20;
@@ -2529,6 +2549,7 @@ export default function Petanque() {
         <button className={cl + (ambiance ? "" : " off")} aria-label="Musique" title="Musique" onClick={basculerAmbiance}><Ico nom="note" taille={t} /></button>
         <button className={cl} aria-label="Aide" title="Aide" onClick={() => setAide(true)}>?</button>
         {enPartie && <button className={cl} aria-label="Accueil" title="Accueil" onClick={quitter}><Ico nom="maison" taille={t} /></button>}
+        {pleinEcranPossible && <button className={cl} aria-label="Plein écran" title="Plein écran" onClick={basculerPleinEcran}><Ico nom={typeof document !== "undefined" && document.fullscreenElement ? "quitterPleinEcran" : "pleinEcran"} taille={t} /></button>}
       </div>
     );
   };
@@ -2555,13 +2576,25 @@ export default function Petanque() {
             <input id="nom" className="champ" value={name} onChange={e => setName(e.target.value)} placeholder="Fernand" />
             <button className="bi g" aria-label="Nom au hasard" title="Nom au hasard" onClick={() => setName(prenomAleatoire())}><Ico nom="de" taille={22} /></button>
           </div>
-          <label style={S.etiquette} htmlFor="code">CODE DE LA PARTIE</label>
-          <div style={S.rangee}>
-            <input id="code" className="champ" style={{ letterSpacing: 1 }} value={code} onChange={e => setCode(e.target.value)} placeholder="PLATANE66" />
-            <button className="bi g" aria-label="Code au hasard" title="Code au hasard" onClick={() => setCode(codeAleatoire())}><Ico nom="tourner" taille={22} /></button>
-          </div>
-          <button className="bp" style={{ marginTop: 6 }} disabled={busy} onClick={join}>REJOINDRE LA PARTIE</button>
-          <button className="bs" onClick={partager}><Ico nom="partage" taille={18} />PARTAGER LE LIEN</button>
+          {codeDuLien ? (
+            <button className="bp" style={{ marginTop: 6 }} disabled={busy} onClick={() => join()}>REJOINDRE LA PARTIE {codeDuLien}</button>
+          ) : (
+            <>
+              <button className="bp" style={{ marginTop: 6 }} disabled={busy} onClick={creerPartie}>CRÉER UNE PARTIE</button>
+              {!saisirCode ? (
+                <button className="bs" onClick={() => setSaisirCode(true)}>REJOINDRE AVEC UN CODE</button>
+              ) : (
+                <>
+                  <label style={S.etiquette} htmlFor="code">CODE DE LA PARTIE</label>
+                  <div style={S.rangee}>
+                    <input id="code" className="champ" style={{ letterSpacing: 1 }} value={code} autoFocus
+                           onChange={e => setCode(e.target.value)} placeholder="PLATANE66" />
+                    <button className="bp" style={{ padding: "0 16px", minHeight: 46 }} disabled={busy} onClick={() => join()}>REJOINDRE</button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
           {notice && <div style={S.ardoise}>{notice}</div>}
         </div>
         {outils(false, true)}
@@ -2757,16 +2790,6 @@ export default function Petanque() {
       <style>{CSS_BASE}{CSS_IVRESSE}</style>
       {aide && <PanneauAide fermer={() => setAide(false)} revoirGeste={() => { setAide(false); setTuto(true); }} />}
       {tuto && !aide && <Didacticiel fermer={fermerTuto} />}
-      {tourneeAnim && (
-        <div style={S.voile}>
-          <div style={S.tourneeVerres}>
-            {[0, 0.18, 0.36].map((d, i) => (
-              <span key={i} style={{ display: "inline-block", animation: `monterVerre .6s ${d}s ease-out both` }}><Verre grand /></span>
-            ))}
-          </div>
-          <p style={{ ...S.tourneeTxt, animation: "trinquer .8s .55s both" }}>{tourneeAnim}</p>
-        </div>
-      )}
       {outils(true)}
       {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
         <div style={S.voile}>
@@ -2786,7 +2809,8 @@ export default function Petanque() {
         <>
           <style>{CSS_FETE}</style>
           <Confettis graine={game.winner + ":" + (game.rev || 0)} />
-          <div style={{ ...S.plaquePopin, zIndex: 2, marginTop: 10 }}>
+          <div style={S.centreEcran}>
+          <div style={{ ...S.plaquePopin, zIndex: 2 }}>
             <Trophee />
             <div style={{ ...S.popinTitre, color: TEAM_COLORS[game.winner] }}>{nomLong(game.winner)}</div>
             <div style={{ ...S.popinTitre, fontSize: 21 }}>GAGNE&nbsp;!</div>
@@ -2799,15 +2823,13 @@ export default function Petanque() {
             ))}
             {isHost && <button className="bp" style={{ marginTop: 4 }} onClick={resetGame}>NOUVELLE PARTIE</button>}
           </div>
+          </div>
         </>
       ) : (
         <>
           <div ref={cadreRef} style={{
             ...S.cadreTerrain,
-            ...(ivresseNiveau ? {
-              animation: `tanguer ${Math.max(2.2, 5.5 - ivresseNiveau * 0.6)}s ease-in-out infinite`,
-              filter: `blur(${Math.min(2.2, ivresseNiveau * 0.35)}px) sepia(${Math.min(0.5, ivresseNiveau * 0.08)}) saturate(${1 + ivresseNiveau * 0.06})`,
-            } : {}),
+            ...ivresseStyle(ivresseNiveau),
           }}>
             <canvas ref={canvasRef} width={largeurVue} height={CANVAS_H} style={S.canvas}
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
@@ -2860,7 +2882,9 @@ const styles = {
     height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
     color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "stretch",
-    padding: "6px 0 6px", boxSizing: "border-box", gap: 6, // bord à bord
+    // bord à bord ; en bas, une marge de sécurité pour que le geste n'aille
+    // pas chercher la barre de navigation du téléphone
+    padding: "6px 0 calc(24px + env(safe-area-inset-bottom, 0px))", boxSizing: "border-box", gap: 6,
     maxWidth: 520, margin: "0 auto", // sur grand écran, le jeu reste une colonne
   },
   enseigne: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 8, textAlign: "center" },
@@ -2901,6 +2925,7 @@ const styles = {
   popinTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 25, lineHeight: 1.1, color: NUIT, fontWeight: 400 },
   popinSous: { fontSize: 15, fontWeight: 500, letterSpacing: 0.5, color: NUIT, marginTop: -4 },
   pastilles: { display: "flex", gap: 8 },
+  centreEcran: { flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 10px" },
   pastilleTuto: { width: 10, height: 10, borderRadius: "50%", border: `2px solid ${NUIT}`, boxSizing: "border-box" },
   etiquette: { fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: NUIT },
   note: { fontSize: 12, lineHeight: 1.4, margin: "-4px 0 0", color: NUIT, opacity: 0.75, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
@@ -2983,10 +3008,9 @@ const styles = {
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18,
     padding: 20, boxSizing: "border-box", overflowY: "auto",
   },
-  tourneeVerres: { display: "flex", gap: 14 },
   tourneeTxt: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, color: PASTIS, textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.3, fontWeight: 400 },
   confettis: { position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 1 },
-  fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
+  fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 14, margin: "6px 0" },
   fannyTampon: {
     fontFamily: "'Alfa Slab One', serif", fontSize: 30, letterSpacing: 3, color: "#bd4f3a", fontWeight: 400,
     border: "4px solid #bd4f3a", borderRadius: 6, padding: "2px 14px",

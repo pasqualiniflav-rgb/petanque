@@ -22,6 +22,13 @@ for (const cle of ["classique", "long"]) {
   };
   const p1 = partie(), p2 = partie();
   verif(p1.b.dead, `sortie par le côté : morte (x = ${p1.b.x.toFixed(1)}, y = ${p1.b.y.toFixed(1)})`);
+  // toucher la ligne de côté suffit : une boule qui frôle la ligne (tracée à 4 px) est morte
+  const frole = { x: T.W - 4 - R + 0.5, y: T.L * 0.5, r: R, mass: 1, vx: 0.2, vy: -3, kind: "boule", team: "A" };
+  const bf0 = [frole]; stepPhysics(bf0, T);
+  verif(frole.dead, "toucher la ligne de côté = morte");
+  const dedans = { x: T.W - 4 - R - 2, y: T.L * 0.5, r: R, mass: 1, vx: 0, vy: -3, kind: "boule", team: "A" };
+  const bd0 = [dedans]; stepPhysics(bd0, T);
+  verif(!dedans.dead, "à 2 px de la ligne, encore vivante");
   verif(p1.b.x > T.W || p1.b.y < 0, "elle s'est arrêtée hors des lignes");
   verif(p1.b.x <= T.W + 28 - R + 1e-9 && p1.b.y >= -28 + R - 1e-9, "dans la bande hors-jeu, contre la planche");
   verif(Math.hypot(p1.b.vx, p1.b.vy) === 0, "et immobile");
