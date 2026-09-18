@@ -38,6 +38,11 @@ Tolérance : ±3 % sur les portées. Le script sort en erreur au premier écart.
 hôte disparu, bot arrivé en cours de partie, joueur remplacé, hôte remplacé,
 lancer déjà annoncé) et que le cerveau accepte un joueur remplacé.
 
+`tests/vitesse.js` compare les portées aux valeurs de référence figées avant
+l'accélération (`tests/portees-reference.json`, ±2 %), mesure la durée d'un
+pointé (~2 s), vérifie le déplacement par sous-pas (< 11 px) et que le
+carreau reste possible.
+
 `tests/mortes.js` vérifie qu'une boule sortie garde sa vitesse, roule sans
 toucher personne jusqu'à la planche hors-jeu, reste enregistrée avec
 `dead:true`, ne compte ni au score ni pour le tour — au bit près.

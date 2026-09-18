@@ -1,0 +1,198 @@
+{
+ "classique": {
+  "point": {
+   "25": {
+    "portee": 274.61,
+    "frames": 336,
+    "dead": false
+   },
+   "40": {
+    "portee": 321.87,
+    "frames": 347,
+    "dead": false
+   },
+   "55": {
+    "portee": 369.11,
+    "frames": 356,
+    "dead": false
+   },
+   "70": {
+    "portee": 416.36,
+    "frames": 364,
+    "dead": false
+   },
+   "85": {
+    "portee": 463.64,
+    "frames": 372,
+    "dead": false
+   },
+   "100": {
+    "portee": 507,
+    "frames": 318,
+    "dead": true
+   }
+  },
+  "coch": {
+   "25": {
+    "portee": 301.88,
+    "frames": 332,
+    "dead": false
+   },
+   "40": {
+    "portee": 353.79,
+    "frames": 343,
+    "dead": false
+   },
+   "55": {
+    "portee": 405.68,
+    "frames": 352,
+    "dead": false
+   },
+   "70": {
+    "portee": 457.57,
+    "frames": 360,
+    "dead": false
+   },
+   "85": {
+    "portee": 472.83,
+    "frames": 320,
+    "dead": false
+   },
+   "100": {
+    "portee": 447.12,
+    "frames": 327,
+    "dead": false
+   }
+  },
+  "tir": {
+   "25": {
+    "portee": 230.77,
+    "frames": 42,
+    "dead": false
+   },
+   "40": {
+    "portee": 290.27,
+    "frames": 49,
+    "dead": false
+   },
+   "55": {
+    "portee": 341.27,
+    "frames": 55,
+    "dead": false
+   },
+   "70": {
+    "portee": 400.77,
+    "frames": 62,
+    "dead": false
+   },
+   "85": {
+    "portee": 451.77,
+    "frames": 68,
+    "dead": false
+   },
+   "100": {
+    "portee": 502.77,
+    "frames": 74,
+    "dead": true
+   }
+  }
+ },
+ "long": {
+  "point": {
+   "25": {
+    "portee": 1038.82,
+    "frames": 204,
+    "dead": false
+   },
+   "40": {
+    "portee": 1382.43,
+    "frames": 215,
+    "dead": false
+   },
+   "55": {
+    "portee": 1748.09,
+    "frames": 225,
+    "dead": false
+   },
+   "70": {
+    "portee": 2069.76,
+    "frames": 231,
+    "dead": false
+   },
+   "85": {
+    "portee": 2444.05,
+    "frames": 238,
+    "dead": false
+   },
+   "100": {
+    "portee": 2737,
+    "frames": 193,
+    "dead": true
+   }
+  },
+  "coch": {
+   "25": {
+    "portee": 1146.42,
+    "frames": 202,
+    "dead": false
+   },
+   "40": {
+    "portee": 1525.35,
+    "frames": 213,
+    "dead": false
+   },
+   "55": {
+    "portee": 1904.38,
+    "frames": 222,
+    "dead": false
+   },
+   "70": {
+    "portee": 2283.32,
+    "frames": 229,
+    "dead": false
+   },
+   "85": {
+    "portee": 2662.28,
+    "frames": 235,
+    "dead": false
+   },
+   "100": {
+    "portee": 2554.61,
+    "frames": 213,
+    "dead": false
+   }
+  },
+  "tir": {
+   "25": {
+    "portee": 969.88,
+    "frames": 68,
+    "dead": false
+   },
+   "40": {
+    "portee": 1299.88,
+    "frames": 83,
+    "dead": false
+   },
+   "55": {
+    "portee": 1651.88,
+    "frames": 99,
+    "dead": false
+   },
+   "70": {
+    "portee": 2003.88,
+    "frames": 115,
+    "dead": false
+   },
+   "85": {
+    "portee": 2333.88,
+    "frames": 130,
+    "dead": false
+   },
+   "100": {
+    "portee": 2685.88,
+    "frames": 146,
+    "dead": false
+   }
+  }
+ }
+}

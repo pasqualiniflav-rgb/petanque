@@ -10,11 +10,21 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 // sable couvre toute la fenêtre, les lignes ne bougent pas, et les boules
 // sorties viennent s'y arrêter.
 const HORS_G = 28, HORS_H = 28, HORS_B = 8;
-const VIEW_W = 340 + 2 * HORS_G;            // fenêtre de jeu : le terrain classique et ses bandes
+// La largeur de la fenêtre s'adapte au ratio de l'appareil (voir
+// reglerLargeurVue) : le sable couvre tout, pas un pixel de fond de page
+// sur les côtés. Les coordonnées physiques, elles, ne bougent jamais.
+let VIEW_W = 340 + 2 * HORS_G;              // fenêtre de jeu : le terrain classique et ses bandes, au minimum
 const VIEW_H = 520 + HORS_H + HORS_B;
 const SKY_H = 84;                  // bande de décor au-dessus du terrain
 const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
-const DECOR_W = VIEW_W + 120;      // décor plus large : parallaxe sur le grand terrain
+const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
+export function reglerLargeurVue(w) {
+  const v = Math.max(340 + 2 * HORS_G, Math.min(640, Math.ceil(w))); // vers le haut : pas un pixel de côté
+  if (v === VIEW_W) return false;
+  VIEW_W = v;
+  decorCache = null; voileCache = null; // pré-rendus à la largeur de la fenêtre
+  return true;
+}
 const R_BOULE = 11, R_COCH = 6;
 const TEAMS = ["A", "B", "C"];
 const TEAM_COLORS = { A: "#2ba3d4", B: "#bd4f3a", C: "#c9a02e" };
@@ -27,17 +37,25 @@ const TEMPS_TOURNEE = 20; // secondes pour choisir à qui offrir la tournée
 
 // Chaque terrain porte sa géométrie et sa calibration physique.
 export const TERRAINS = {
+  // Vitesses accélérées pour des sensations de vraie pétanque, portées
+  // conservées. Le frottement s'applique dès la frame d'atterrissage, la
+  // distance roulée vaut donc v·mu/(1−mu) : quand v est multipliée par k,
+  // mu/(1−mu) est divisé par k. Facteur 2,2 ici (le roulé du classique
+  // s'éteint lentement, il fallait ça pour qu'un pointé dure ~2 s), 1,7
+  // sur le grand terrain.
   classique: {
     nom: "Classique", W: 340, L: 520,
-    camera: false, subSteps: 1, stopSeuil: 0.04,
-    muRoll: 0.9855, angleMax: 25,
-    vPoint: p => 2.9 + (p / 100) * 4.6,
+    camera: false, subSteps: 2, stopSeuil: 0.2,
+    muRoll: 0.9687, angleMax: 25,
+    vPoint: p => (2.9 + (p / 100) * 4.6) * 2.2,
     // Tolérance du carreau : après l'atterrissage la boule tirée ne roule
-    // plus que ~35 px (au lieu de ~70) — sans jauge de force, la cible se
-    // touchait sur 60 px de geste, c'était trop facile. Aucun aléa.
-    vTir: 8.5, muTir: 0.76,
+    // plus que ~35 px — sans jauge de force, la cible se touchait sur
+    // 60 px de geste, c'était trop facile. Aucun aléa.
+    vTir: 18.7, muTir: 0.59,
     airTir: p => Math.max(60, 140 + (p / 100) * 360 - 26),
-    cochMin: 170, skidSeuil: 4, skidMu: 0.94,
+    // Dérapage après un choc : la boule frappée part sec et meurt vite,
+    // la frappante meurt quasi sur place
+    cochMin: 170, skidSeuil: 8.8, skidMu: 0.8,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
     // Cochonnet : plus léger, il part en cloche plus courte et va un peu
     // plus loin que la boule à force égale — la différence est assumée
@@ -45,12 +63,12 @@ export const TERRAINS = {
   },
   long: {
     nom: "Long 10 m", W: 640, L: 2750,
-    camera: true, subSteps: 8, stopSeuil: 0.2,
-    muRoll: 0.975, angleMax: 8,
-    vPoint: p => 12 + (p / 100) * 58,
-    vTir: 22, muTir: 0.86,
+    camera: true, subSteps: 12, stopSeuil: 0.34,
+    muRoll: 0.9582, angleMax: 8,
+    vPoint: p => (12 + (p / 100) * 58) * 1.7,
+    vTir: 37.4, muTir: 0.7765,
     airTir: p => Math.max(150, 300 + (p / 100) * 2300 - 60),
-    cochMin: 1400, skidSeuil: 12, skidMu: 0.9,
+    cochMin: 1400, skidSeuil: 20.4, skidMu: 0.78,
     volPoint: 0.5,
     volCoch: 0.4, cochVif: 1.1,
   },
@@ -239,8 +257,10 @@ export function stepPhysics(bodies, T) {
           c.x += nx * overlap; c.y += ny * overlap;
           const rel = (c.vx - a.vx) * nx + (c.vy - a.vy) * ny;
           if (rel < 0) {
-            // Le tir claque (carreau possible), le pointé pousse mollement
-            const rest = (a.tir || c.tir) ? 0.9 : 0.45;
+            // Sur le sable le choc est mat : plein fer, la frappante garde
+            // ~20 % de sa vitesse (carreau), la frappée part avec ~80 % —
+            // et le dérapage tue tout ça très vite. Le pointé pousse mollement.
+            const rest = (a.tir || c.tir) ? 0.6 : 0.3;
             const imp = (-(1 + rest) * rel) / (1 / a.mass + 1 / c.mass);
             a.vx -= (imp / a.mass) * nx; a.vy -= (imp / a.mass) * ny;
             c.vx += (imp / c.mass) * nx; c.vy += (imp / c.mass) * ny;
@@ -807,14 +827,14 @@ function textureOmbrePlatane() {
 function bandeDecor() {
   if (decorCache) return decorCache;
   const cv = document.createElement("canvas");
-  cv.width = DECOR_W; cv.height = SKY_H;
+  cv.width = decorLargeur(); cv.height = SKY_H;
   const cx = cv.getContext("2d");
-  if (photoDecor) dessinerPhotoDecor(cx, DECOR_W, SKY_H);
-  else dessinerDecorStylise(cx, DECOR_W, SKY_H);
+  if (photoDecor) dessinerPhotoDecor(cx, decorLargeur(), SKY_H);
+  else dessinerDecorStylise(cx, decorLargeur(), SKY_H);
   const fondu = cx.createLinearGradient(0, SKY_H - 18, 0, SKY_H);
   fondu.addColorStop(0, "rgba(58,44,24,0)");
   fondu.addColorStop(1, "rgba(58,44,24,0.38)");
-  cx.fillStyle = fondu; cx.fillRect(0, SKY_H - 18, DECOR_W, 18);
+  cx.fillStyle = fondu; cx.fillRect(0, SKY_H - 18, decorLargeur(), 18);
   decorCache = cv;
   return cv;
 }
@@ -1255,11 +1275,11 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     };
   }
   // coin haut-gauche de la fenêtre, en coordonnées terrain
-  const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -HORS_G, y: -HORS_H };
+  const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -(VIEW_W - T.W) / 2, y: -HORS_H };
 
   // bande de décor : elle glisse doucement quand la caméra se déplace
   const glisse = cam ? (cam.x / T.W - 0.5) : 0;
-  ctx.drawImage(bandeDecor(), -(DECOR_W - VIEW_W) / 2 - glisse * (DECOR_W - VIEW_W), 0);
+  ctx.drawImage(bandeDecor(), -(decorLargeur() - VIEW_W) / 2 - glisse * (decorLargeur() - VIEW_W), 0);
 
   // le terrain vit sous la bande de décor
   ctx.save();
@@ -1442,7 +1462,9 @@ const CSS_BASE = `
 .bi.p{width:36px;height:36px;font-size:16px}
 .bi.off svg{opacity:.35}
 .bp:active,.bs:active,.bi:active{transform:translateY(3px);box-shadow:none}
-.bp:disabled{opacity:.6;cursor:default}
+.bp:disabled,.bs:disabled{opacity:.45;cursor:default}
+.bp:disabled:active,.bs:disabled:active{transform:none;box-shadow:0 3px 0 ${NUIT}}
+input[type=range]:disabled{opacity:.45}
 .champ{background:#faf6ea;border:2px solid ${NUIT};border-radius:4px;padding:10px 12px;font-family:'Oswald',sans-serif;font-size:17px;color:${NUIT};outline:none;box-sizing:border-box;width:100%;min-width:0}
 .champ:focus{box-shadow:inset 0 0 0 1px ${NUIT}}
 .puce{display:inline-flex;align-items:center;gap:5px;background:${NUIT};color:${CREME};border-radius:4px;padding:5px 9px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.5px}
@@ -1582,11 +1604,48 @@ const CSS_IVRESSE = `
   100% { transform: scale(1); opacity: 1; }
 }`;
 
+// ---------- Mini-didacticiel du lancer ----------------------------
+// À la première partie sur l'appareil : trois étapes, un tap pour passer.
+// Revoyable depuis l'aide.
+
+function Didacticiel({ fermer }) {
+  const S = styles;
+  const [etape, setEtape] = React.useState(0);
+  const dessin = i => {
+    const terrain = <rect x="20" y="10" width="80" height="120" rx="3" fill="#d8c49a" stroke={NUIT} strokeWidth="2" />;
+    const doigt = (x, y) => (
+      <g stroke={NUIT} strokeWidth="2" fill="#faf6ea" strokeLinejoin="round">
+        <path d={`M${x} ${y}v-14a4 4 0 0 1 8 0v20l6-3a4 4 0 0 1 6 3v10a10 10 0 0 1-10 10h-6a10 10 0 0 1-10-10v-16a4 4 0 0 1 6 0z`} />
+      </g>
+    );
+    if (i === 0) return <svg width="120" height="140" viewBox="0 0 120 140" aria-hidden="true">{terrain}<circle cx="60" cy="96" r="16" fill="none" stroke={NUIT} strokeWidth="2" strokeDasharray="4 4" />{doigt(56, 90)}</svg>;
+    if (i === 1) return <svg width="120" height="140" viewBox="0 0 120 140" aria-hidden="true">{terrain}<path d="M60 40v46" stroke="#6b573a" strokeWidth="2" strokeDasharray="3 5" strokeLinecap="round" /><path d="M60 62v52" stroke={NUIT} strokeWidth="3" strokeLinecap="round" /><path d="M52 106l8 10 8-10" fill="none" stroke={NUIT} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />{doigt(56, 114)}</svg>;
+    return <svg width="120" height="140" viewBox="0 0 120 140" aria-hidden="true">{terrain}<circle cx="60" cy="44" r="9" fill="#2ba3d4" stroke={NUIT} strokeWidth="2" /><path d="M60 100V62M48 84l-4-8M72 84l4-8" stroke={NUIT} strokeWidth="2" strokeLinecap="round" opacity=".6" />{doigt(80, 118)}</svg>;
+  };
+  const etapes = [
+    ["TOUCHE LE TERRAIN", "Pose le doigt sur le sable, là où tu veux."],
+    ["TIRE VERS L'ARRIÈRE", "La direction du geste donne la direction, sa longueur la force."],
+    ["RELÂCHE", "La boule part. C'est tout — à toi de jouer."],
+  ];
+  const suivant = () => { if (etape < 2) setEtape(etape + 1); else fermer(); };
+  return (
+    <div style={S.voile} onClick={suivant}>
+      <div style={S.plaquePopin}>
+        {dessin(etape)}
+        <div style={S.popinTitre}>{etapes[etape][0]}</div>
+        <div style={S.popinSous}>{etapes[etape][1]}</div>
+        <div style={S.pastilles}>{[0, 1, 2].map(i => <span key={i} style={{ ...S.pastilleTuto, background: i === etape ? NUIT : "transparent" }} />)}</div>
+        <button className="bp" style={{ width: "100%" }} onClick={e => { e.stopPropagation(); suivant(); }}>{etape < 2 ? "SUIVANT" : "ALLEZ, ON JOUE"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Écran d'aide ------------------------------------------
 // Les nouveaux arrivent par un lien, sans rien connaître : tout ce qu'il
 // faut savoir tient sur une plaque, accessible de partout par le « ? ».
 
-function PanneauAide({ fermer }) {
+function PanneauAide({ fermer, revoirGeste }) {
   const S = styles;
   const section = (titre, texte) => (
     <div key={titre}>
@@ -1634,6 +1693,7 @@ function PanneauAide({ fermer }) {
         {section("À plusieurs",
           `Jusqu'à 9 joueurs et 3 équipes. Tout le monde entre le même code de partie,
            chacun sur son appareil, et chaque lancer se rejoue en direct chez les autres.`)}
+        {revoirGeste && <button className="bs" onClick={revoirGeste}>REVOIR LE GESTE</button>}
         <button className="bp" onClick={fermer}>ALLEZ, ON JOUE</button>
       </div>
     </div>
@@ -1661,6 +1721,13 @@ export default function Petanque() {
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
   const [aide, setAide] = useState(false);
+  // Mini-didacticiel : à la première partie sur cet appareil
+  const [tuto, setTuto] = useState(false);
+  useEffect(() => {
+    if (screen !== "in" || game?.phase !== "playing") return;
+    try { if (!localStorage.getItem("petanque.tuto")) setTuto(true); } catch {}
+  }, [screen, game?.phase]);
+  const fermerTuto = () => { setTuto(false); try { localStorage.setItem("petanque.tuto", "1"); } catch {} };
   // Lancer au doigt par défaut ; les curseurs restent disponibles (bureau,
   // accessibilité) et le choix est retenu sur l'appareil.
   const [curseurs, setCurseurs] = useState(() => {
@@ -1672,6 +1739,24 @@ export default function Petanque() {
   // point de la mène compris), on le crie — pas sur le lancer qui termine
   // la mène, la pop-in prend le relais. Cri choisi par rotation.
   const [cri, setCri] = useState(null);
+  // Largeur interne du canvas épousant le cadre : mesurée au chargement
+  // et à chaque changement de taille
+  const cadreRef = useRef(null);
+  const [largeurVue, setLargeurVue] = useState(VIEW_W);
+  useEffect(() => {
+    const el = cadreRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const mesurer = () => {
+      const bw = el.clientWidth, bh = el.clientHeight; // la boîte intérieure, bordures exclues
+      if (bw < 10 || bh < 10) return;
+      const w = (CANVAS_H * bw) / bh;
+      if (reglerLargeurVue(w)) setLargeurVue(VIEW_W);
+    };
+    mesurer();
+    const ro = new ResizeObserver(mesurer);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [screen, game?.phase]);
   const tenantRef = useRef({ mene: null, team: null });
   const criCompteurRef = useRef(0);
   useEffect(() => {
@@ -1680,14 +1765,14 @@ export default function Petanque() {
     const tenant = m.cochonnet && m.boules.some(b => !b.dead) ? (scoreMene(game)?.team ?? null) : null;
     const ref = tenantRef.current;
     if (ref.mene !== m.num) { ref.mene = m.num; ref.team = tenant; return; } // nouvelle mène : on repart sans crier
-    if (tenant && tenant !== ref.team) {
+    if (tenant && tenant !== ref.team && m.boules.length >= 3) { // avant, prendre le point est trivial
       const n = criCompteurRef.current++;
       setCri(`${CRIS[n % CRIS.length]} ${TEAM_NAMES[tenant].replace("Équipe ", "").toUpperCase()} PREND LE POINT`);
       const t = setTimeout(() => setCri(null), 2500);
       ref.team = tenant;
       return () => clearTimeout(t);
     }
-    ref.team = tenant ?? ref.team;
+    ref.team = tenant ?? ref.team; // on suit le tenant même sans crier
   }, [game?.rev]);
   // Tapis figé à l'écran entre un lancer et la suite (voir « figer »)
   const [gel, setGel] = useState(null);
@@ -2042,7 +2127,7 @@ export default function Petanque() {
     const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75 }
       : (myTurn && !gel && curseurs ? { angle, progression: 0 } : null);
     drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs]);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -2146,8 +2231,16 @@ export default function Petanque() {
 
   async function start() {
     const base = (await loadGame(code)) || game;
-    if (activeTeams(base).length < 2) { setNotice("Il faut au moins 2 équipes avec un joueur."); return; }
+    if (!activeTeams(base).length) { setNotice("Il faut au moins un joueur."); return; }
     await mutate(g => {
+      if (activeTeams(g).length < 2) { // une seule équipe : un bot complète une équipe vide, pas d'impasse
+        const vide = TEAMS.find(t => !g.players.some(p => p.team === t));
+        const pris = new Set(g.players.map(p => p.name));
+        const prenom = PRENOMS_BOT.find(n => !pris.has(n)) || "Marius";
+        g.players.push({ id: "b" + Date.now() + Math.floor(Math.random() * 1000), name: prenom, team: vide, bot: true, niveau: "pointeur" });
+        setNotice(`${prenom} complète ${TEAM_NAMES[vide]}`);
+        setTimeout(() => setNotice(""), 5000);
+      }
       g.phase = "playing";
       newMene(g, activeTeams(g)[0], 1);
     });
@@ -2298,6 +2391,14 @@ export default function Petanque() {
       } else {
         st.streak = null; // mène blanche : la série retombe
         newMene(st, st.mene.firstTeam, st.mene.num + 1);
+      }
+    }
+    // Quelqu'un a pu rejoindre la table pendant le lancer : on le garde
+    const frais = await loadGame(code);
+    if (frais) for (const p of frais.players) {
+      if (!st.players.some(q => q.id === p.id)) {
+        st.players.push(p);
+        if (st.mene && st.mene.left[p.id] === undefined) st.mene.left[p.id] = 0;
       }
     }
     if (finMene) figer(bodies, st.rev, true, true); // on laisse voir le tapis final
@@ -2654,7 +2755,8 @@ export default function Petanque() {
   return (
     <div style={S.pageGame}>
       <style>{CSS_BASE}{CSS_IVRESSE}</style>
-      {aide && <PanneauAide fermer={() => setAide(false)} />}
+      {aide && <PanneauAide fermer={() => setAide(false)} revoirGeste={() => { setAide(false); setTuto(true); }} />}
+      {tuto && !aide && <Didacticiel fermer={fermerTuto} />}
       {tourneeAnim && (
         <div style={S.voile}>
           <div style={S.tourneeVerres}>
@@ -2700,44 +2802,36 @@ export default function Petanque() {
         </>
       ) : (
         <>
-          <div style={{
+          <div ref={cadreRef} style={{
             ...S.cadreTerrain,
             ...(ivresseNiveau ? {
               animation: `tanguer ${Math.max(2.2, 5.5 - ivresseNiveau * 0.6)}s ease-in-out infinite`,
               filter: `blur(${Math.min(2.2, ivresseNiveau * 0.35)}px) sepia(${Math.min(0.5, ivresseNiveau * 0.08)}) saturate(${1 + ivresseNiveau * 0.06})`,
             } : {}),
           }}>
-            <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas}
+            <canvas ref={canvasRef} width={largeurVue} height={CANVAS_H} style={S.canvas}
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
             {fronton}
             {surimpressions}
           </div>
-          <div style={{ ...S.commandes, height: curseurs ? 150 : 52,
-                        visibility: peutLancer && (curseurs || !cochToThrow) ? "visible" : "hidden" }}>
-            {!cochToThrow && (
-              <div style={S.rangee}>
-                <button className={mode === "point" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
-                <button className={mode === "tir" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
-                <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" /></button>
-              </div>
-            )}
-            {cochToThrow && curseurs && (
-              <div style={S.rangee}>
-                <button className="bs" style={{ width: 50, padding: 0, minHeight: 36, marginLeft: "auto" }} aria-label="Options" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" taille={16} /></button>
-              </div>
-            )}
+          <div style={{ ...S.commandes, height: curseurs ? 150 : 52 }}>
+            <div style={S.rangee}>
+              <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
+              <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
+              <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" /></button>
+            </div>
             {curseurs && (
               <div style={S.plaqueCurseurs}>
                 <div style={S.ligneCurseur}>
                   <span style={S.etiquetteCurseur}>DIRECTION</span>
-                  <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} />
+                  <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} disabled={!peutLancer} onChange={e => setAngle(+e.target.value)} />
                 </div>
                 <div style={S.ligneCurseur}>
                   <span style={S.etiquetteCurseur}>{!cochToThrow && mode === "tir" ? "DISTANCE" : "FORCE"}</span>
-                  <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} />
+                  <input type="range" min={25} max={100} value={power} disabled={!peutLancer} onChange={e => setPower(+e.target.value)} />
                 </div>
-                <button className="bp" style={{ width: "100%", minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
+                <button className="bp" disabled={!peutLancer} style={{ width: "100%", minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
                   {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
                 </button>
               </div>
@@ -2806,6 +2900,8 @@ const styles = {
   plaqueTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, lineHeight: 1.15, margin: 0, color: NUIT, textAlign: "center", fontWeight: 400 },
   popinTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 25, lineHeight: 1.1, color: NUIT, fontWeight: 400 },
   popinSous: { fontSize: 15, fontWeight: 500, letterSpacing: 0.5, color: NUIT, marginTop: -4 },
+  pastilles: { display: "flex", gap: 8 },
+  pastilleTuto: { width: 10, height: 10, borderRadius: "50%", border: `2px solid ${NUIT}`, boxSizing: "border-box" },
   etiquette: { fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: NUIT },
   note: { fontSize: 12, lineHeight: 1.4, margin: "-4px 0 0", color: NUIT, opacity: 0.75, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
   rangee: { display: "flex", gap: 8, alignItems: "stretch" },
