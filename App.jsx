@@ -10,11 +10,15 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 // sable couvre toute la fenêtre, les lignes ne bougent pas, et les boules
 // sorties viennent s'y arrêter.
 const HORS_G = 28, HORS_H = 28, HORS_B = 8;
+// Au-dessus des lignes, la fenêtre montre plus de sable que la planche
+// physique (HORS_H) : c'est là que la plaque de score est plantée, sous
+// les façades et les platanes. Rendu seulement.
+const HAUT_VUE = 64;
 // La largeur de la fenêtre s'adapte au ratio de l'appareil (voir
 // reglerLargeurVue) : le sable couvre tout, pas un pixel de fond de page
 // sur les côtés. Les coordonnées physiques, elles, ne bougent jamais.
 let VIEW_W = 340 + 2 * HORS_G;              // fenêtre de jeu : le terrain classique et ses bandes, au minimum
-const VIEW_H = 520 + HORS_H + HORS_B;
+const VIEW_H = 520 + HAUT_VUE + HORS_B;
 const SKY_H = 84;                  // bande de décor au-dessus du terrain
 const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
@@ -27,8 +31,8 @@ export function reglerLargeurVue(w) {
 }
 const R_BOULE = 11, R_COCH = 6;
 const TEAMS = ["A", "B", "C"];
-const TEAM_COLORS = { A: "#2ba3d4", B: "#bd4f3a", C: "#c9a02e" };
-const TEAM_NAMES = { A: "Équipe ciel", B: "Équipe rouge", C: "Équipe ocre" };
+const TEAM_COLORS = { A: "#2ba3d4", B: "#bd4f3a", C: "#7f9f78" }; // sauge
+const TEAM_NAMES = { A: "Équipe ciel", B: "Équipe rouge", C: "Équipe sauge" };
 const CRIS = ["Oh peuchère !", "Tè, vé !", "Oh fan de chichourle !", "Boudiou !", "Adieu vat !"];
 const TARGET = 13;
 const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le travail
@@ -1271,11 +1275,11 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     const foc = cible || coch || { x: T.W / 2, y: T.L * 0.45 };
     cam = { // la fenêtre peut montrer les bandes hors-jeu
       x: Math.max(VIEW_W / 2 - HORS_G, Math.min(T.W + HORS_G - VIEW_W / 2, foc.x)),
-      y: Math.max(VIEW_H / 2 - HORS_H, Math.min(T.L + HORS_B - VIEW_H / 2, foc.y)),
+      y: Math.max(VIEW_H / 2 - HAUT_VUE, Math.min(T.L + HORS_B - VIEW_H / 2, foc.y)),
     };
   }
   // coin haut-gauche de la fenêtre, en coordonnées terrain
-  const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -(VIEW_W - T.W) / 2, y: -HORS_H };
+  const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -(VIEW_W - T.W) / 2, y: -HAUT_VUE };
 
   // bande de décor : elle glisse doucement quand la caméra se déplace
   const glisse = cam ? (cam.x / T.W - 0.5) : 0;
@@ -1417,7 +1421,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const mw = 40, mh = Math.round(mw * T.L / T.W);
-    const mx = VIEW_W - mw - 6, my = SKY_H + 52, s = mw / T.W; // sous le fronton planté en haut
+    const mx = VIEW_W - mw - 6, my = SKY_H + HAUT_VUE + 20, s = mw / T.W; // sous le fronton planté en haut
     // petite plaquette posée sur le terrain, cerclée de jaune pastis
     ctx.fillStyle = "rgba(38,30,14,0.5)";
     ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
@@ -1571,7 +1575,7 @@ function Confettis({ graine }) {
   // Un jet de confettis aux couleurs des équipes et du pastis ; l'aléa
   // ne sert qu'à la fête, jamais au jeu.
   const pieces = React.useMemo(() => {
-    const couleurs = [PASTIS, "#2ba3d4", "#bd4f3a", "#c9a02e", "#8fd4f0", CREME];
+    const couleurs = [PASTIS, "#2ba3d4", "#bd4f3a", "#7f9f78", "#8fd4f0", CREME];
     return Array.from({ length: 48 }, (_, i) => ({
       left: Math.random() * 100, delai: Math.random() * 2.5, duree: 3 + Math.random() * 2.5,
       taille: 6 + Math.random() * 8, couleur: couleurs[i % couleurs.length],
@@ -1764,6 +1768,7 @@ export default function Petanque() {
   // et à chaque changement de taille
   const cadreRef = useRef(null);
   const [largeurVue, setLargeurVue] = useState(VIEW_W);
+  const [echelleVue, setEchelleVue] = useState(1); // pixels écran par unité de canvas
   useEffect(() => {
     const el = cadreRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1772,6 +1777,7 @@ export default function Petanque() {
       if (bw < 10 || bh < 10) return;
       const w = (CANVAS_H * bw) / bh;
       if (reglerLargeurVue(w)) setLargeurVue(VIEW_W);
+      setEchelleVue(bh / CANVAS_H);
     };
     mesurer();
     const ro = new ResizeObserver(mesurer);
@@ -2716,7 +2722,7 @@ export default function Petanque() {
   const chrono = game.phase !== "playing" ? null
     : tourneeEnAttente ? tourneeReste
     : (!animating && !gel) ? resteTemps : null;
-  const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#8a6612" }; // lisibles sur le bois
+  const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#4b6a44" }; // lisibles sur le bois
   const trois = equipes.length > 2;
   const railH = trois ? 16 : 20, railPas = trois ? 22 : 26, railTop = trois ? 6 : 8;
   const rail = (t, i) => {
@@ -2756,12 +2762,16 @@ export default function Petanque() {
       {nomTour && <> · <span style={{ color: NOMS_GRAVES[turnPlayer.team] }}>{nomTour}</span></>}
     </span>
   );
+  // Plantée sur le sable qui déborde au-dessus des lignes, juste sous le
+  // sol de la place du village (à 79 % de la bande de décor) : façades et
+  // platanes restent visibles au-dessus. Offsets de la maquette.
+  const hautPlaque = Math.round(0.79 * SKY_H * echelleVue) - 6;
   const fronton = (
     <>
-      <div style={S.plaqueOmbre} />
-      <div style={{ ...S.poteau, left: 64 }} />
-      <div style={{ ...S.poteau, right: 64 }} />
-      <div style={S.plaqueBois}>
+      <div style={{ ...S.plaqueOmbre, top: hautPlaque + 108 }} />
+      <div style={{ ...S.poteau, left: 64, top: hautPlaque + 52 }} />
+      <div style={{ ...S.poteau, right: 64, top: hautPlaque + 52 }} />
+      <div style={{ ...S.plaqueBois, top: hautPlaque }}>
         {equipes.map(rail)}
         {trois ? (
           <div style={{ ...S.bandeau, top: 70 }}>
@@ -2773,7 +2783,7 @@ export default function Petanque() {
           </div>
         )}
       </div>
-      {trois && <div style={S.microLigne}>{ligneCentre}</div>}
+      {trois && <div style={{ ...S.microLigne, top: hautPlaque + 93 }}>{ligneCentre}</div>}
     </>
   );
 

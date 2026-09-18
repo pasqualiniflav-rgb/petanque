@@ -128,6 +128,8 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 
 | — | Au passage : les cris du Sud et les annonces de tournée ne s'effaçaient plus dès qu'une écriture survenait dans les 2,5 s (le nettoyage de l'effet annulait leur minuteur) — un cri d'une partie pouvait survivre jusque dans la suivante. Minuteur porté par un ref, cri effacé en quittant ; mesuré : 2,4 s de vie malgré 22 rafraîchissements | ✅ |
 
+| 8 | Retouches : l'équipe ocre devient **sauge** (`#7f9f78`, nom gravé `#4b6a44`, charte mise à jour) ; la plaque est plantée sur le sable qui déborde au-dessus des lignes, sous le sol de la place — façades et platanes restent visibles au-dessus (bande de sable vue élargie à 64 unités, rendu seul : la planche des boules mortes ne bouge pas) | ✅ |
+
 L'item « scoreboard » (B4 du sprint mobile, B3 polish, A1 affinage) est **fermé** par cette plaque.
 
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)

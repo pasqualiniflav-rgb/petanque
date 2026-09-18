@@ -15,7 +15,7 @@ boulodrome municipal — jamais la carte sombre arrondie générique.
 | Sable | `#d8c49a` clair / `#c9b488` ombre |
 | Équipe ciel | `#2ba3d4` |
 | Équipe rouge (garance) | `#bd4f3a` |
-| Équipe ocre | `#c9a02e` |
+| Équipe sauge | `#7f9f78` |
 | Jaune pastis (action principale) | `#f6c324` |
 | Ardoise (bandeaux d'info sur le terrain) | `#2e2a24`, opaque |
 
