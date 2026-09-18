@@ -6,7 +6,12 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 // Long 10 m (caméra qui suit l'action + mini-carte).
 // ------------------------------------------------------------------
 
-const VIEW_W = 340, VIEW_H = 520; // fenêtre de jeu (terrain) à l'écran
+// Bandes hors-jeu visibles autour du terrain (côtés, fond, arrière) : le
+// sable couvre toute la fenêtre, les lignes ne bougent pas, et les boules
+// sorties viennent s'y arrêter.
+const HORS_G = 28, HORS_H = 28, HORS_B = 8;
+const VIEW_W = 340 + 2 * HORS_G;            // fenêtre de jeu : le terrain classique et ses bandes
+const VIEW_H = 520 + HORS_H + HORS_B;
 const SKY_H = 84;                  // bande de décor au-dessus du terrain
 const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
 const DECOR_W = VIEW_W + 120;      // décor plus large : parallaxe sur le grand terrain
@@ -64,7 +69,7 @@ function activeTeams(st) {
 // Équipe qui doit jouer : celle dont la meilleure boule est la plus
 // éloignée du cochonnet (ou qui n'a encore rien lancé), parmi celles
 // qui ont encore des boules. Retourne l'id du joueur, ou null.
-function nextToPlay(st) {
+export function nextToPlay(st) {
   const m = st.mene;
   const teams = activeTeams(st);
   const leftOf = t =>
@@ -78,7 +83,7 @@ function nextToPlay(st) {
     return cands[0]?.id ?? null;
   }
   const bestOf = t => {
-    const bs = m.boules.filter(b => b.team === t);
+    const bs = m.boules.filter(b => b.team === t && !b.dead);
     return bs.length ? Math.min(...bs.map(b => dist(b, m.cochonnet))) : Infinity;
   };
   const order = t => {
@@ -99,18 +104,18 @@ function nextToPlay(st) {
 
 // Points de la mène : l'équipe la plus proche marque autant de points
 // que de boules mieux placées que la meilleure boule adverse.
-function scoreMene(st) {
+export function scoreMene(st) {
   const m = st.mene;
   const teams = activeTeams(st);
   const bestOf = t => {
-    const bs = m.boules.filter(b => b.team === t);
+    const bs = m.boules.filter(b => b.team === t && !b.dead); // les mortes ne comptent pas
     return bs.length ? Math.min(...bs.map(b => dist(b, m.cochonnet))) : Infinity;
   };
   const ranked = teams.map(t => ({ t, d: bestOf(t) })).sort((a, b) => a.d - b.d);
   if (!isFinite(ranked[0].d)) return null;
   const winner = ranked[0].t;
   const rival = ranked.length > 1 ? ranked[1].d : Infinity;
-  const pts = m.boules.filter(b => b.team === winner && dist(b, m.cochonnet) < rival).length;
+  const pts = m.boules.filter(b => b.team === winner && !b.dead && dist(b, m.cochonnet) < rival).length;
   return { team: winner, pts: Math.max(1, pts) };
 }
 
@@ -208,10 +213,17 @@ export function stepPhysics(bodies, T) {
         if (b.x > T.W - b.r) { b.x = T.W - b.r; b.vx *= -0.5; }
         if (b.y < b.r) { b.y = b.r; b.vy *= -0.5; }
         if (b.y > T.L - b.r) { b.y = T.L - b.r; b.vy *= -0.5; }
-      } else if (b.y < b.r + 4) {
-        b.dead = true; b.vx = 0; b.vy = 0; // ligne de fond franchie = boule morte
-      } else if (b.x < -b.r || b.x > T.W + b.r || b.y > T.L + b.r) {
-        b.dead = true; b.vx = 0; b.vy = 0; // côtés : morte seulement si entièrement sortie
+      } else {
+        // Ligne de fond franchie = boule morte ; côtés : morte seulement si
+        // entièrement sortie. Elle garde sa vitesse et roule encore, sans
+        // plus toucher personne, jusqu'à buter sur la planche hors-jeu.
+        if (!b.dead && (b.y < b.r + 4 || b.x < -b.r || b.x > T.W + b.r || b.y > T.L + b.r)) b.dead = true;
+        if (b.dead) {
+          const xmin = -HORS_G + b.r, xmax = T.W + HORS_G - b.r;
+          const ymin = -HORS_H + b.r, ymax = T.L + HORS_B - b.r;
+          if (b.x < xmin) { b.x = xmin; b.vx = 0; } else if (b.x > xmax) { b.x = xmax; b.vx = 0; }
+          if (b.y < ymin) { b.y = ymin; b.vy = 0; } else if (b.y > ymax) { b.y = ymax; b.vy = 0; }
+        }
       }
     }
     for (let i = 0; i < bodies.length; i++) {
@@ -571,7 +583,10 @@ async function loadGame(code) {
   } catch { return null; }
 }
 async function saveGame(code, st) {
-  st.rev = Date.now(); // horodatage : évite les collisions de versions entre appareils
+  // Numéro de version : l'horodatage, mais jamais en dessous de la version
+  // de départ + 1 — deux téléphones aux horloges décalées ne doivent pas
+  // se faire ignorer mutuellement leurs états comme « périmés »
+  st.rev = Math.max(Date.now(), (st.rev || 0) + 1);
   try {
     const r = await fetch(`${DB_URL}/petanque/${encodeURIComponent(code)}.json`, {
       method: "PUT",
@@ -1234,11 +1249,13 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     }
     const coch = list.find(b => b.kind === "coch" && !b.dead);
     const foc = cible || coch || { x: T.W / 2, y: T.L * 0.45 };
-    cam = {
-      x: Math.max(VIEW_W / 2, Math.min(T.W - VIEW_W / 2, foc.x)),
-      y: Math.max(VIEW_H / 2, Math.min(T.L - VIEW_H / 2, foc.y)),
+    cam = { // la fenêtre peut montrer les bandes hors-jeu
+      x: Math.max(VIEW_W / 2 - HORS_G, Math.min(T.W + HORS_G - VIEW_W / 2, foc.x)),
+      y: Math.max(VIEW_H / 2 - HORS_H, Math.min(T.L + HORS_B - VIEW_H / 2, foc.y)),
     };
   }
+  // coin haut-gauche de la fenêtre, en coordonnées terrain
+  const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -HORS_G, y: -HORS_H };
 
   // bande de décor : elle glisse doucement quand la caméra se déplace
   const glisse = cam ? (cam.x / T.W - 0.5) : 0;
@@ -1249,15 +1266,19 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.beginPath();
   ctx.rect(0, SKY_H, VIEW_W, VIEW_H);
   ctx.clip();
-  if (cam) ctx.setTransform(1, 0, 0, 1, VIEW_W / 2 - cam.x, SKY_H + VIEW_H / 2 - cam.y);
-  else ctx.setTransform(1, 0, 0, 1, 0, SKY_H);
+  ctx.setTransform(1, 0, 0, 1, -fen.x, SKY_H - fen.y);
 
-  // sable : grain répétable, puis nuances du terrain par-dessus.
-  // On ne peint que la portion visible : le grand terrain fait 640 x 2750.
-  const vue = cam
-    ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2, w: VIEW_W, h: VIEW_H }
-    : { x: 0, y: 0, w: T.W, h: T.L };
+  // sable : le grain couvre toute la fenêtre, bandes hors-jeu comprises ;
+  // nuances et traces ne concernent que le terrain lui-même. On ne peint
+  // que la portion visible : le grand terrain fait 640 x 2750.
   ctx.fillStyle = motifDuSable(ctx);
+  ctx.fillRect(fen.x, fen.y, VIEW_W, VIEW_H);
+  ctx.fillStyle = "rgba(60,45,20,0.07)"; // hors des lignes, le sable est un peu plus terne
+  ctx.fillRect(fen.x, fen.y, VIEW_W, VIEW_H);
+  const vue = { x: Math.max(0, fen.x), y: Math.max(0, fen.y) };
+  vue.w = Math.min(T.W, fen.x + VIEW_W) - vue.x;
+  vue.h = Math.min(T.L, fen.y + VIEW_H) - vue.y;
+  ctx.fillStyle = motifDuSable(ctx); // le terrain lui-même, net
   ctx.fillRect(vue.x, vue.y, vue.w, vue.h);
   const nu = nuancesDuSable(T);
   ctx.drawImage(nu,
@@ -1300,7 +1321,15 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.arc(START.x, START.y, 20, 0, Math.PI * 2);
   ctx.stroke();
   for (const b of list) {
-    if (b.dead) continue;
+    if (b.dead) { // hors-jeu : grisée, translucide, posée dans la bande
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      const eo = b.r * 2.5;
+      ctx.drawImage(spriteOmbreBoule(), b.x + 1.6 - eo / 2, b.y + 3.2 - eo * 0.33, eo, eo * 0.66);
+      dessinerBoule(ctx, b.x, b.y, b.r, b.kind === "coch" ? "coch" : "#8f8c86");
+      ctx.restore();
+      continue;
+    }
     // ombre portée : elle s'élargit, s'écarte et pâlit quand la boule
     // quitte le sol ; en tir, on doit voir qu'elle vole
     const lob = b._lob || 0;
@@ -1352,7 +1381,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   // joueur se tient : une courte ligne pointillée à faible opacité, qui
   // s'estompe à mesure que le geste s'allonge. La direction se devine.
   if (aim) {
-    const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - 30;
+    const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - HORS_B - 30;
     const rad = (aim.angle * Math.PI) / 180;
     const len = 52;
     const alpha = 0.38 - 0.28 * Math.min(1, aim.progression || 0);
@@ -1418,7 +1447,11 @@ const CSS_BASE = `
 .champ:focus{box-shadow:inset 0 0 0 1px ${NUIT}}
 .puce{display:inline-flex;align-items:center;gap:5px;background:${NUIT};color:${CREME};border-radius:4px;padding:5px 9px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.5px}
 .puce .x{border:none;background:transparent;color:${CREME};padding:0 0 0 4px;cursor:pointer;display:flex;align-items:center;min-height:24px}
-input[type=range]{accent-color:${NUIT}}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:30px;background:transparent;margin:0;flex:1;min-width:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:${NUIT};border-radius:3px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:${PASTIS};border:2px solid ${NUIT};box-shadow:0 2px 0 ${NUIT};margin-top:-11px}
+input[type=range]::-moz-range-track{height:6px;background:${NUIT};border-radius:3px}
+input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:${PASTIS};border:2px solid ${NUIT};box-shadow:0 2px 0 ${NUIT}}
 `;
 
 // Le set d'icônes, trait 2 px, même graisse partout. Chemins repris des
@@ -1635,18 +1668,27 @@ export default function Petanque() {
   });
   const [geste, setGeste] = useState(null); // { angle, power, valide } pendant le glissé
   const gesteRef = useRef(null);
-  // Le bandeau de résultat s'affiche quelques secondes puis disparaît de lui-même
-  const [banniere, setBanniere] = useState(null);
-  const derniereMeneAnnonceeRef = useRef(null);
+  // Le cri du Sud : quand l'équipe qui tient le point change (premier
+  // point de la mène compris), on le crie — pas sur le lancer qui termine
+  // la mène, la pop-in prend le relais. Cri choisi par rotation.
+  const [cri, setCri] = useState(null);
+  const tenantRef = useRef({ mene: null, team: null });
+  const criCompteurRef = useRef(0);
   useEffect(() => {
-    const lr = game?.lastResult;
-    if (!lr || game.phase !== "playing") { setBanniere(null); return; }
-    if (derniereMeneAnnonceeRef.current === lr.mene) return;
-    derniereMeneAnnonceeRef.current = lr.mene;
-    setBanniere(`${CRIS[lr.mene % CRIS.length]} ${TEAM_NAMES[lr.team].replace("Équipe ", "").toUpperCase()} marque ${lr.pts} pt${lr.pts > 1 ? "s" : ""} — mène ${lr.mene}`);
-    const t = setTimeout(() => setBanniere(null), 7000);
-    return () => clearTimeout(t);
-  }, [game?.lastResult?.mene, game?.phase]);
+    if (!game || game.phase !== "playing" || !game.mene) { tenantRef.current = { mene: null, team: null }; return; }
+    const m = game.mene;
+    const tenant = m.cochonnet && m.boules.some(b => !b.dead) ? (scoreMene(game)?.team ?? null) : null;
+    const ref = tenantRef.current;
+    if (ref.mene !== m.num) { ref.mene = m.num; ref.team = tenant; return; } // nouvelle mène : on repart sans crier
+    if (tenant && tenant !== ref.team) {
+      const n = criCompteurRef.current++;
+      setCri(`${CRIS[n % CRIS.length]} ${TEAM_NAMES[tenant].replace("Équipe ", "").toUpperCase()} PREND LE POINT`);
+      const t = setTimeout(() => setCri(null), 2500);
+      ref.team = tenant;
+      return () => clearTimeout(t);
+    }
+    ref.team = tenant ?? ref.team;
+  }, [game?.rev]);
   // Tapis figé à l'écran entre un lancer et la suite (voir « figer »)
   const [gel, setGel] = useState(null);
   const gelRef = useRef(null);
@@ -1832,8 +1874,8 @@ export default function Petanque() {
         const coch = bodies.find(b => b.kind === "coch");
         const prov = structuredClone(g);
         prov.mene.cochonnet = coch ? { x: coch.x, y: coch.y } : null;
-        prov.mene.boules = bodies.filter(b => b.kind === "boule" && !b.dead)
-          .map(b => ({ x: b.x, y: b.y, team: b.team, pid: b.pid }));
+        prov.mene.boules = bodies.filter(b => b.kind === "boule")
+          .map(b => ({ x: b.x, y: b.y, team: b.team, pid: b.pid, dead: b.dead || undefined }));
         const pid = g.replay.thrown.pid;
         if (g.replay.thrown.kind !== "coch" && pid) {
           prov.mene.left[pid] = Math.max(0, (prov.mene.left[pid] || 0) - 1);
@@ -2220,9 +2262,9 @@ export default function Petanque() {
     st.enCours = false;
     replayedRef.current = st.replay.id;
     st.mene.cochonnet = { x: coch.x, y: coch.y };
-    st.mene.boules = bodies
-      .filter(b => b.kind === "boule" && !b.dead)
-      .map(b => ({ x: b.x, y: b.y, team: b.team, pid: b.pid, tir: b.tir || undefined }));
+    st.mene.boules = bodies // les mortes restent, grisées, jusqu'à la fin de la mène
+      .filter(b => b.kind === "boule")
+      .map(b => ({ x: b.x, y: b.y, team: b.team, pid: b.pid, tir: b.tir || undefined, dead: b.dead || undefined }));
     if (!wasCochThrow) {
       st.mene.left[pid] = Math.max(0, (st.mene.left[pid] || 0) - 1);
     }
@@ -2310,7 +2352,7 @@ export default function Petanque() {
     // on retrouve son échelle et ses décalages
     const r = e.currentTarget.getBoundingClientRect();
     const k = Math.min(r.width / VIEW_W, r.height / CANVAS_H);
-    const dx = (r.width - VIEW_W * k) / 2, dy = (r.height - CANVAS_H * k) / 2;
+    const dx = (r.width - VIEW_W * k) / 2, dy = r.height - CANVAS_H * k; // calée en bas
     return { x: (e.clientX - r.left - dx) / k, y: (e.clientY - r.top - dy) / k };
   };
 
@@ -2535,70 +2577,78 @@ export default function Petanque() {
     : tourneeEnAttente ? tourneeReste
     : (!animating && !gel) ? resteTemps : null;
   const NOMS_CLAIRS = { A: "#7cc9e8", B: "#e8a08e", C: "#e6c977" };
-  const colonne = t => {
+  // Le fronton : une seule rangée, comme une plaque de comptage —
+  // « ● CIEL 01 ●2 | MÈNE 4 ⏱19 À TOI | ROUGE 03 ●3 ● »
+  const serre = equipes.length > 2;
+  const blocEquipe = (t, miroir) => {
     const auTour = game.phase === "playing" && turnPlayer?.team === t;
     const tient = pointLive && pointLive.team === t;
     return (
-      <div key={t} style={{ ...S.frontonCol, background: auTour ? "rgba(242,236,220,0.09)" : "transparent" }}>
-        <div style={{ ...S.frontonNom, color: NOMS_CLAIRS[t] }}>
-          <span style={{ ...S.pastille, width: 8, height: 8, background: TEAM_COLORS[t] }} />{nomCourt(t)}
-        </div>
-        <div style={S.frontonScore}>{String(game.scores[t] || 0).padStart(2, "0")}</div>
-        <div style={S.frontonInfo}>
+      <div key={t} style={{ ...S.frontonEquipe, flexDirection: miroir ? "row-reverse" : "row",
+                            background: auTour ? "rgba(242,236,220,0.1)" : "transparent" }}>
+        <span style={{ ...S.pastille, width: 7, height: 7, background: TEAM_COLORS[t] }} />
+        <span style={{ ...S.frontonNom, color: NOMS_CLAIRS[t], fontSize: serre ? 9 : 10 }}>{nomCourt(t)}</span>
+        <span style={{ ...S.frontonScore, fontSize: serre ? 20 : 24 }}>{String(game.scores[t] || 0).padStart(2, "0")}</span>
+        <span style={S.frontonInfo}>
           {game.mene && <span style={S.frontonItem}><Boule />{restantes(t)}</span>}
           {(game.drinks?.[t] || 0) > 0 && <span style={S.frontonItem}><Verre />{game.drinks[t]}</span>}
           {tient && <span style={S.frontonPoint}>+{pointLive.pts}</span>}
-        </div>
+        </span>
       </div>
     );
   };
   const centre = (
     <div style={S.frontonCentre}>
-      <div style={S.frontonMene}>MÈNE</div>
-      <div style={S.frontonMeneNum}>{game.mene?.num ?? "–"}</div>
-      {chrono !== null && (
-        <div style={S.frontonChrono}>
-          <Ico nom="horloge" taille={13} couleur="#ffd84d" epaisseur={2.4} />
-          <span style={{ color: chrono <= 5 && !tourneeEnAttente ? "#ff8a6a" : "#ffd84d" }}>{chrono}</span>
-        </div>
-      )}
-      <div style={S.frontonTour}>{ligneTour}</div>
-    </div>
-  );
-  const fronton = equipes.length <= 2 ? (
-    <div style={S.fronton}>
-      {colonne(equipes[0])}
-      {centre}
-      {equipes[1] && colonne(equipes[1])}
-    </div>
-  ) : (
-    <div style={{ ...S.fronton, flexDirection: "column", gap: 2 }}>
-      <div style={{ display: "flex", gap: 8 }}>{equipes.map(colonne)}</div>
-      <div style={{ ...S.frontonCentre, flex: "none", flexDirection: "row", gap: 12, borderLeft: "none", borderRight: "none",
-                    borderTop: "1px solid rgba(242,236,220,0.35)", paddingTop: 3 }}>
-        <span style={S.frontonMene}>MÈNE <span style={{ fontSize: 15 }}>{game.mene?.num ?? "–"}</span></span>
+      <span style={S.frontonMene}>MÈNE {game.mene?.num ?? "–"}</span>
+      <span style={S.frontonLigne2}>
         {chrono !== null && (
           <span style={S.frontonChrono}>
-            <Ico nom="horloge" taille={13} couleur="#ffd84d" epaisseur={2.4} />
+            <Ico nom="horloge" taille={11} couleur="#ffd84d" epaisseur={2.6} />
             <span style={{ color: chrono <= 5 && !tourneeEnAttente ? "#ff8a6a" : "#ffd84d" }}>{chrono}</span>
           </span>
         )}
-        <span style={{ ...S.frontonTour, marginTop: 0 }}>{ligneTour}</span>
-      </div>
+        <span style={S.frontonTour}>{ligneTour}</span>
+      </span>
+    </div>
+  );
+  const fronton = (
+    <div style={S.fronton}>
+      {blocEquipe(equipes[0], false)}
+      {centre}
+      {equipes.slice(1).map((t, i) => blocEquipe(t, i === equipes.length - 2))}
     </div>
   );
 
-  // Rien n'est écrit sur le sable : les messages passagers et le résultat
-  // de la mène passent dans une ardoise au-dessus du terrain
+  // Rien n'est écrit sur le sable, et rien ne bouge le terrain : messages
+  // passagers en ardoise posée sous le fronton, cri du Sud en plaque
+  // posée sur le terrain — tout en position absolue.
   const texteArdoise = notice
-    || (tourneeEnAttente && !(me && game.tourneePending === me.team) ? `${TEAM_NAMES[game.tourneePending]} choisit à qui offrir la tournée…` : null)
-    || banniere;
+    || (tourneeEnAttente && !(me && game.tourneePending === me.team) ? `${TEAM_NAMES[game.tourneePending]} choisit à qui offrir la tournée…` : null);
 
   const plaqueInfo = (texte, boutons) => (
     <div style={S.plaqueInfo}>
       <span style={S.plaqueInfoTexte}>{texte}</span>
       {boutons}
     </div>
+  );
+  const surimpressions = (
+    <>
+      {texteArdoise && <div style={S.ardoiseFlottante}>{texteArdoise}</div>}
+      {cri && <div style={S.criPlaque}><span style={S.criTexte}>{cri}</span></div>}
+      {!me && game.phase !== "finished" && plaqueInfo(
+        <><Ico nom="oeil" taille={16} /> Tu regardes la partie.</>,
+        placeLibre(game) && <button className="bs petit" onClick={entrerEnJeu}>ENTRER</button>)}
+      {absentAProposer && plaqueInfo(
+        absentAProposer.id === meId ? "Tu as laissé filer 3 lancers — un bot peut prendre la suite."
+                                    : `${absentAProposer.name} a laissé filer 3 lancers.`,
+        <>
+          <button className="bs petit" onClick={() => remplacerParBot(absentAProposer.id)}><Ico nom="robot" taille={14} />{absentAProposer.id === meId ? "UN BOT POUR MOI" : "LE REMPLACER"}</button>
+          <button className="bs petit creux" onClick={() => laisserJoueur(absentAProposer.id)}>{absentAProposer.id === meId ? "JE JOUE" : "L'ATTENDRE"}</button>
+        </>)}
+      {me?.bot && me.remplace && plaqueInfo(
+        <><Ico nom="robot" taille={16} /> Un bot joue tes boules pendant ton absence.</>,
+        <button className="bs petit" onClick={reprendreMain}>JE REPRENDS</button>)}
+    </>
   );
 
   return (
@@ -2616,7 +2666,6 @@ export default function Petanque() {
         </div>
       )}
       {outils(true)}
-      {texteArdoise && <div style={S.ardoiseLigne}>{texteArdoise}</div>}
       {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
         <div style={S.voile}>
           <div style={S.plaquePopin}>
@@ -2631,19 +2680,6 @@ export default function Petanque() {
           </div>
         </div>
       )}
-      {!me && game.phase !== "finished" && plaqueInfo(
-        <><Ico nom="oeil" taille={16} /> Tu regardes la partie.</>,
-        placeLibre(game) && <button className="bs petit" onClick={entrerEnJeu}>ENTRER</button>)}
-      {absentAProposer && plaqueInfo(
-        absentAProposer.id === meId ? "Tu as laissé filer 3 lancers — un bot peut prendre la suite."
-                                    : `${absentAProposer.name} a laissé filer 3 lancers.`,
-        <>
-          <button className="bs petit" onClick={() => remplacerParBot(absentAProposer.id)}><Ico nom="robot" taille={14} />{absentAProposer.id === meId ? "UN BOT POUR MOI" : "LE REMPLACER"}</button>
-          <button className="bs petit creux" onClick={() => laisserJoueur(absentAProposer.id)}>{absentAProposer.id === meId ? "JE JOUE" : "L'ATTENDRE"}</button>
-        </>)}
-      {me?.bot && me.remplace && plaqueInfo(
-        <><Ico nom="robot" taille={16} /> Un bot joue tes boules pendant ton absence.</>,
-        <button className="bs petit" onClick={reprendreMain}>JE REPRENDS</button>)}
       {game.phase === "finished" ? (
         <>
           <style>{CSS_FETE}</style>
@@ -2675,38 +2711,38 @@ export default function Petanque() {
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
             {fronton}
+            {surimpressions}
           </div>
-          {peutLancer && (curseurs || !cochToThrow) && (
-            <div style={S.commandes}>
-              {!cochToThrow && (
-                <div style={S.rangee}>
-                  <button className={mode === "point" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17 }} onClick={() => setMode("point")}>POINTER</button>
-                  <button className={mode === "tir" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17 }} onClick={() => setMode("tir")}>TIRER</button>
-                  {!curseurs && (
-                    <button className="bs" style={{ width: 50, padding: 0 }} aria-label="Options" title="Préférer les curseurs" onClick={() => basculerCurseurs(true)}><Ico nom="engrenage" /></button>
-                  )}
+          <div style={{ ...S.commandes, height: curseurs ? 150 : 52,
+                        visibility: peutLancer && (curseurs || !cochToThrow) ? "visible" : "hidden" }}>
+            {!cochToThrow && (
+              <div style={S.rangee}>
+                <button className={mode === "point" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
+                <button className={mode === "tir" ? "bp" : "bs"} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
+                <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" /></button>
+              </div>
+            )}
+            {cochToThrow && curseurs && (
+              <div style={S.rangee}>
+                <button className="bs" style={{ width: 50, padding: 0, minHeight: 36, marginLeft: "auto" }} aria-label="Options" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" taille={16} /></button>
+              </div>
+            )}
+            {curseurs && (
+              <div style={S.plaqueCurseurs}>
+                <div style={S.ligneCurseur}>
+                  <span style={S.etiquetteCurseur}>DIRECTION</span>
+                  <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} />
                 </div>
-              )}
-              {curseurs && (
-                <div style={S.plaqueCurseurs}>
-                  <div style={S.ligneCurseur}>
-                    <span style={S.etiquetteCurseur}>DIRECTION</span>
-                    <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
-                  </div>
-                  <div style={S.ligneCurseur}>
-                    <span style={S.etiquetteCurseur}>{!cochToThrow && mode === "tir" ? "DISTANCE" : "FORCE"}</span>
-                    <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
-                  </div>
-                  <div style={S.rangee}>
-                    <button className="bp" style={{ flex: 1, minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
-                      {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
-                    </button>
-                    <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Lancer au doigt" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" /></button>
-                  </div>
+                <div style={S.ligneCurseur}>
+                  <span style={S.etiquetteCurseur}>{!cochToThrow && mode === "tir" ? "DISTANCE" : "FORCE"}</span>
+                  <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} />
                 </div>
-              )}
-            </div>
-          )}
+                <button className="bp" style={{ width: "100%", minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
+                  {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
+                </button>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -2761,8 +2797,8 @@ const styles = {
     border: `2px solid ${NUIT}`, borderRadius: 6, boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)",
     padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8,
   },
-  plaqueInfo: {
-    width: "100%", boxSizing: "border-box", background: CREME, color: NUIT,
+  plaqueInfo: { // surimpression au bas du terrain
+    position: "absolute", left: 6, right: 6, bottom: 8, zIndex: 3, boxSizing: "border-box", background: CREME, color: NUIT,
     border: `2px solid ${NUIT}`, borderRadius: 4, boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)",
     padding: "6px 10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
   },
@@ -2785,55 +2821,66 @@ const styles = {
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
     padding: "7px 12px", textAlign: "center", borderRadius: 4, boxSizing: "border-box",
   },
-  // Ligne d'ardoise au-dessus du terrain (messages passagers, résultat)
-  ardoiseLigne: {
+  // Ardoise posée sous le fronton (messages passagers) : ne bouge rien
+  ardoiseFlottante: {
+    position: "absolute", left: 6, right: 6, top: 62, zIndex: 3,
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
     padding: "5px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
+  // Le cri du Sud : plaque posée sur le terrain, le temps de le dire
+  criPlaque: {
+    position: "absolute", left: 16, right: 16, top: "42%", zIndex: 4, boxSizing: "border-box",
+    background: CREME, color: NUIT, border: `3px solid ${NUIT}`, borderRadius: 6,
+    boxShadow: `0 4px 0 rgba(0, 0, 0, 0.35), inset 0 0 0 3px ${CREME}, inset 0 0 0 4px ${NUIT}`,
+    padding: "12px 14px", textAlign: "center", animation: "trinquer .5s both",
+  },
+  criTexte: { fontFamily: "'Alfa Slab One', serif", fontSize: 19, lineHeight: 1.2, letterSpacing: 0.5 },
   // Le terrain : pleine largeur, fin cadre bois ; les bandeaux s'y collent
   // Le terrain : bord à bord, fin cadre bois, fond sable uni ; le fronton
   // est planté dessus, en haut
   cadreTerrain: {
     position: "relative", flex: 1, minHeight: 0, width: "100%", boxSizing: "border-box",
     borderTop: "5px solid #8a6b43", borderBottom: "5px solid #8a6b43", overflow: "hidden",
-    background: "#d8c49a", display: "flex", justifyContent: "center", alignItems: "flex-start",
+    // ciel en haut (le vide éventuel passe sous le fronton), sable hors-jeu ailleurs
+    background: "linear-gradient(180deg, #3f95cd 0, #3f95cd 12%, #cdb992 12%, #cdb992 100%)",
+    display: "flex", justifyContent: "center", alignItems: "flex-start",
   },
-  // Le canvas remplit le cadre ; l'image garde son ratio, centrée — le
-  // fronton couvre l'éventuel vide du haut
+  // Le canvas remplit le cadre ; l'image garde son ratio, calée en bas —
+  // l'éventuel vide du haut est du ciel, sous le fronton
   canvas: {
-    display: "block", width: "100%", height: "100%", objectFit: "contain", objectPosition: "50% 50%",
+    display: "block", width: "100%", height: "100%", objectFit: "contain", objectPosition: "50% 100%",
     touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
-  commandes: { display: "flex", flexDirection: "column", gap: 6, padding: "0 6px" },
+  commandes: { display: "flex", flexDirection: "column", gap: 6, padding: "0 6px", boxSizing: "border-box", flexShrink: 0 },
   plaqueCurseurs: {
     background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
-    boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", padding: "6px 8px", display: "flex", flexDirection: "column", gap: 4,
+    boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", padding: "4px 8px 6px", display: "flex", flexDirection: "column", gap: 2,
   },
-  ligneCurseur: { display: "flex", alignItems: "center", gap: 8, minHeight: 30 },
+  ligneCurseur: { display: "flex", alignItems: "center", gap: 8, minHeight: 32 },
   etiquetteCurseur: { fontSize: 11, fontWeight: 600, letterSpacing: 1.5, width: 78, flexShrink: 0 },
   // Le fronton du boulodrome
-  // Le fronton, panneau planté en haut du terrain : compact, toutes les
-  // informations (scores, MÈNE N, chrono, qui joue, boules, verres)
+  // Le fronton, plaque de comptage plantée en haut du terrain : une seule
+  // rangée, tout inline, chiffres lumineux
   fronton: {
-    position: "absolute", top: 6, left: 6, right: 6, zIndex: 3, boxSizing: "border-box",
+    position: "absolute", top: 6, left: 6, right: 6, zIndex: 3, boxSizing: "border-box", height: 52,
     background: NUIT, border: "2px solid #10222f", borderRadius: 6,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(242, 236, 220, 0.35)",
-    padding: "5px 8px 4px", display: "flex", alignItems: "stretch", gap: 6,
+    padding: "0 8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4,
   },
-  frontonCol: { flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, borderRadius: 4, padding: "1px 0" },
-  frontonNom: { display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: 2, whiteSpace: "nowrap" },
-  frontonScore: { fontSize: 30, lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 12px rgba(255, 216, 77, 0.55)" },
-  frontonInfo: { display: "flex", alignItems: "center", gap: 8, color: CREME, fontSize: 12, fontWeight: 600, minHeight: 14 },
-  frontonItem: { display: "flex", alignItems: "center", gap: 3 },
-  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 4px", fontWeight: 700, fontSize: 11 },
+  frontonEquipe: { flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", gap: 5, borderRadius: 4, padding: "2px 4px", whiteSpace: "nowrap" },
+  frontonNom: { fontWeight: 600, letterSpacing: 1.5 },
+  frontonScore: { lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 10px rgba(255, 216, 77, 0.55)" },
+  frontonInfo: { display: "flex", alignItems: "center", gap: 5, color: CREME, fontSize: 11, fontWeight: 600 },
+  frontonItem: { display: "flex", alignItems: "center", gap: 2 },
+  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 3px", fontWeight: 700, fontSize: 10 },
   frontonCentre: {
-    flex: "0 0 82px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1,
-    borderLeft: "1px solid rgba(242, 236, 220, 0.35)", borderRight: "1px solid rgba(242, 236, 220, 0.35)",
+    flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    padding: "0 8px", borderLeft: "1px solid rgba(242, 236, 220, 0.35)", borderRight: "1px solid rgba(242, 236, 220, 0.35)", whiteSpace: "nowrap",
   },
-  frontonMene: { fontSize: 9, fontWeight: 600, letterSpacing: 2.5, color: CREME },
-  frontonMeneNum: { fontSize: 20, lineHeight: 1, fontWeight: 700, color: CREME },
-  frontonChrono: { display: "flex", alignItems: "center", gap: 3, fontSize: 15, fontWeight: 700 },
-  frontonTour: { fontSize: 9, fontWeight: 600, letterSpacing: 1.2, color: CREME, opacity: 0.9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 80 },
+  frontonMene: { fontSize: 9, fontWeight: 600, letterSpacing: 2, color: CREME },
+  frontonLigne2: { display: "flex", alignItems: "center", gap: 6 },
+  frontonChrono: { display: "flex", alignItems: "center", gap: 2, fontSize: 14, fontWeight: 700 },
+  frontonTour: { fontSize: 8.5, fontWeight: 600, letterSpacing: 1, color: CREME, opacity: 0.9, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis" },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",
@@ -2842,7 +2889,6 @@ const styles = {
   },
   tourneeVerres: { display: "flex", gap: 14 },
   tourneeTxt: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, color: PASTIS, textAlign: "center", maxWidth: 300, margin: 0, lineHeight: 1.3, fontWeight: 400 },
-  range: { width: "100%", height: 36 },
   confettis: { position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 1 },
   fanny: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
   fannyTampon: {

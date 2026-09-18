@@ -38,6 +38,10 @@ Tolérance : ±3 % sur les portées. Le script sort en erreur au premier écart.
 hôte disparu, bot arrivé en cours de partie, joueur remplacé, hôte remplacé,
 lancer déjà annoncé) et que le cerveau accepte un joueur remplacé.
 
+`tests/mortes.js` vérifie qu'une boule sortie garde sa vitesse, roule sans
+toucher personne jusqu'à la planche hors-jeu, reste enregistrée avec
+`dead:true`, ne compte ni au score ni pour le tour — au bit près.
+
 `tests/carreau.js` mesure, pour une boule cible posée à différentes
 distances, la plage de force (donc de longueur de geste) qui la déloge :
 c'est la tolérance du carreau. Même commande, en remplaçant `portees` par
