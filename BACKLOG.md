@@ -114,6 +114,22 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C7 | Accueil : « CRÉER UNE PARTIE » (code tiré, entrée directe) et « REJOINDRE AVEC UN CODE » ; un lien `?partie=CODE` affiche « REJOINDRE LA PARTIE CODE » | ✅ |
 | C8 | Partage : `navigator.share` (feuille native), sinon presse-papier + bandeau « Lien copié ! » | ✅ |
 
+## 🪵 Mission scoreboard — le panneau de bois à rails *(arbitrage rendu)*
+
+| # | Item | État |
+|---|------|------|
+| 1 | Plaque de bois gravée à rails 0-13 (valeurs de `maquette-scoreboard.html` : bois veiné, bordure #7a5a35, patine, chiffres gravés #4a2f16 + rehaut) ; le score est la position du jeton, pastille pleine à la couleur de l'équipe ; 3 rails à 3 équipes | ✅ |
+| 2 | Plantée : deux poteaux derrière la plaque jusqu'au sable, ombre portée au sol (offsets de la maquette) | ✅ |
+| 3 | Bandeau bas en miroir strict (flancs `flex: 1`) : pastille · boules · verre — « MÈNE N · cadran · secondes · NOM » — verre · boules · pastille ; tout gravé sauf pastilles, liquide des verres et le nom du joueur au tour, teinté à sa couleur (unique indicateur du tour) | ✅ |
+| 4 | Chrono : cadran SVG, rouge garance + pulsation douce sous 5 s | ✅ |
+| 5 | Le jeton glisse le long de son rail (transition CSS 0,6 s) ; cases de largeur égale pour que le jeton tombe exactement sur son chiffre | ✅ |
+| 6 | Plaque de 90 px (84 + bordures), hors poteaux ; à 3 équipes : 3 rails, bandeau en 3 groupes, micro-ligne « MÈNE · chrono · NOM » sous la plaque | ✅ |
+| 7 | Testé : classique et long, 390 px, partie à 3 équipes, changement de score vu en direct chez l'hôte (35 → 82 px) et chez l'invitée au premier plan (112 → 136 px) | ✅ |
+
+| — | Au passage : les cris du Sud et les annonces de tournée ne s'effaçaient plus dès qu'une écriture survenait dans les 2,5 s (le nettoyage de l'effet annulait leur minuteur) — un cri d'une partie pouvait survivre jusque dans la suivante. Minuteur porté par un ref, cri effacé en quittant ; mesuré : 2,4 s de vie malgré 22 rafraîchissements | ✅ |
+
+L'item « scoreboard » (B4 du sprint mobile, B3 polish, A1 affinage) est **fermé** par cette plaque.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |

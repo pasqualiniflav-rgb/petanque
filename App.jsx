@@ -1465,6 +1465,8 @@ const CSS_BASE = `
 .bp:disabled,.bs:disabled{opacity:.45;cursor:default}
 .bp:disabled:active,.bs:disabled:active{transform:none;box-shadow:0 3px 0 ${NUIT}}
 input[type=range]:disabled{opacity:.45}
+.chronoRouge{color:#bd4f3a;animation:pouls 1s ease-in-out infinite}
+@keyframes pouls{0%,100%{opacity:1}50%{opacity:.5}}
 .champ{background:#faf6ea;border:2px solid ${NUIT};border-radius:4px;padding:10px 12px;font-family:'Oswald',sans-serif;font-size:17px;color:${NUIT};outline:none;box-sizing:border-box;width:100%;min-width:0}
 .champ:focus{box-shadow:inset 0 0 0 1px ${NUIT}}
 .puce{display:inline-flex;align-items:center;gap:5px;background:${NUIT};color:${CREME};border-radius:4px;padding:5px 9px;font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;letter-spacing:.5px}
@@ -1733,6 +1735,14 @@ export default function Petanque() {
   const [niveauBot, setNiveauBot] = useState("pointeur");
   const [aide, setAide] = useState(false);
   const [cri, setCri] = useState(null); // cris du Sud et annonces de tournée, même bandeau
+  // Le cri s'efface tout seul : minuteur porté par un ref, jamais annulé
+  // par un simple rendu (un nettoyage d'effet le faisait, et le cri restait)
+  const criTimerRef = useRef(null);
+  const crier = useCallback((texte, ms) => {
+    clearTimeout(criTimerRef.current);
+    setCri(texte);
+    criTimerRef.current = setTimeout(() => setCri(null), ms);
+  }, []);
   // Mini-didacticiel : à la première partie sur cet appareil
   const [tuto, setTuto] = useState(false);
   useEffect(() => {
@@ -1778,10 +1788,9 @@ export default function Petanque() {
     if (ref.mene !== m.num) { ref.mene = m.num; ref.team = tenant; return; } // nouvelle mène : on repart sans crier
     if (tenant && tenant !== ref.team && m.boules.length >= 3) { // avant, prendre le point est trivial
       const n = criCompteurRef.current++;
-      setCri(`${CRIS[n % CRIS.length]} ${TEAM_NAMES[tenant].replace("Équipe ", "").toUpperCase()} PREND LE POINT`);
-      const t = setTimeout(() => setCri(null), 2500);
+      crier(`${CRIS[n % CRIS.length]} ${TEAM_NAMES[tenant].replace("Équipe ", "").toUpperCase()} PREND LE POINT`, 2500);
       ref.team = tenant;
-      return () => clearTimeout(t);
+      return;
     }
     ref.team = tenant ?? ref.team; // on suit le tenant même sans crier
   }, [game?.rev]);
@@ -1893,11 +1902,9 @@ export default function Petanque() {
     if (!lt || lt.id === seenTourneeRef.current) return;
     seenTourneeRef.current = lt.id;
     const cible = TEAM_NAMES[lt.to].replace("Équipe ", "").toUpperCase();
-    setCri(me && lt.to === me.team
+    crier(me && lt.to === me.team
       ? (lt.surprise ? "SURPRISE ! Trois mènes d'affilée… vous trinquez aussi !" : `Santé ! ${TEAM_NAMES[lt.from].replace("Équipe ", "").toUpperCase()} vous offre la tournée`)
-      : (lt.surprise ? `${cible} enchaîne trois mènes — tournée surprise !` : `Tournée de pastis : ${cible} régale`));
-    const t = setTimeout(() => setCri(null), 3200);
-    return () => clearTimeout(t);
+      : (lt.surprise ? `${cible} enchaîne trois mènes — tournée surprise !` : `Tournée de pastis : ${cible} régale`), 3200);
   }, [game, me]);
 
   // --- synchronisation -------------------------------------------
@@ -2441,6 +2448,8 @@ export default function Petanque() {
   // prénom et code pré-remplis pour revenir en un geste.
   const quitter = () => {
     poserAnimating(false);
+    clearTimeout(criTimerRef.current); setCri(null); // rien ne suit d'une partie à l'autre
+    tenantRef.current = { mene: null, team: null };
     gelRef.current = null; setGel(null);
     replayedRef.current = null; meneTracesRef.current = -1;
     setNotice(""); setGame(null); setMeId(null);
@@ -2699,58 +2708,73 @@ export default function Petanque() {
     ? scoreMene(game) : null;
   const equipes = activeTeams(game);
 
-  // Le fronton : une colonne par équipe, un compteur central « MÈNE N »
-  // avec le chronomètre et qui joue — façon panneau de basket.
-  const ligneTour = game.phase !== "playing" ? "PARTIE FINIE"
-    : tourneeEnAttente ? "TOURNÉE…"
-    : gel && !gel.commit ? "RÉSULTAT…"
-    : animating ? "…"
-    : myTurn ? "À TOI !"
-    : (turnPlayer?.name ?? "…").toUpperCase();
+  // La plaque de bois gravée à rails (maquette-scoreboard.html) : le score
+  // EST la position du jeton sur son rail 0-13, tout le reste est gravé ;
+  // seuls restent en couleur les pastilles d'équipe, le liquide des
+  // verres et le nom du joueur au tour — l'unique indicateur du tour. La
+  // plaque est plantée sur deux poteaux qui descendent jusqu'au sable.
   const chrono = game.phase !== "playing" ? null
     : tourneeEnAttente ? tourneeReste
     : (!animating && !gel) ? resteTemps : null;
-  const NOMS_CLAIRS = { A: "#7cc9e8", B: "#e8a08e", C: "#e6c977" };
-  // Le fronton : une seule rangée, comme une plaque de comptage —
-  // « ● CIEL 01 ●2 | MÈNE 4 ⏱19 À TOI | ROUGE 03 ●3 ● »
-  const serre = equipes.length > 2;
-  const blocEquipe = (t, miroir) => {
-    const auTour = game.phase === "playing" && turnPlayer?.team === t;
-    const tient = pointLive && pointLive.team === t;
+  const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#8a6612" }; // lisibles sur le bois
+  const trois = equipes.length > 2;
+  const railH = trois ? 16 : 20, railPas = trois ? 22 : 26, railTop = trois ? 6 : 8;
+  const rail = (t, i) => {
+    const sc = Math.max(0, Math.min(13, game.scores[t] || 0));
     return (
-      <div key={t} style={{ ...S.frontonEquipe, flexDirection: miroir ? "row-reverse" : "row",
-                            background: auTour ? "rgba(242,236,220,0.1)" : "transparent" }}>
-        <span style={{ ...S.pastille, width: 7, height: 7, background: TEAM_COLORS[t] }} />
-        <span style={{ ...S.frontonNom, color: NOMS_CLAIRS[t], fontSize: serre ? 9 : 10 }}>{nomCourt(t)}</span>
-        <span style={{ ...S.frontonScore, fontSize: serre ? 20 : 24 }}>{String(game.scores[t] || 0).padStart(2, "0")}</span>
-        <span style={S.frontonInfo}>
-          {game.mene && <span style={S.frontonItem}><Boule />{restantes(t)}</span>}
-          {(game.drinks?.[t] || 0) > 0 && <span style={S.frontonItem}><Verre />{game.drinks[t]}</span>}
-          {tient && <span style={S.frontonPoint}>+{pointLive.pts}</span>}
-        </span>
+      <div key={t} style={{ ...S.rail, top: railTop + i * railPas, height: railH }}>
+        {Array.from({ length: 14 }, (_, n) => (
+          <span key={n} style={{ ...S.railChiffre, visibility: n === sc ? "hidden" : "visible" }}>{n}</span>
+        ))}
+        {/* le jeton glisse le long du rail jusqu'à sa case (transition CSS) */}
+        <span style={{ ...S.jeton, background: TEAM_COLORS[t], left: `calc(4px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 8px))` }}>{sc}</span>
       </div>
     );
   };
-  const centre = (
-    <div style={S.frontonCentre}>
-      <span style={S.frontonMene}>MÈNE {game.mene?.num ?? "–"}</span>
-      <span style={S.frontonLigne2}>
-        {chrono !== null && (
-          <span style={S.frontonChrono}>
-            <Ico nom="horloge" taille={11} couleur="#ffd84d" epaisseur={2.6} />
-            <span style={{ color: chrono <= 5 && !tourneeEnAttente ? "#ff8a6a" : "#ffd84d" }}>{chrono}</span>
-          </span>
-        )}
-        <span style={S.frontonTour}>{ligneTour}</span>
-      </span>
-    </div>
+  const verreGrave = (
+    <svg width="8" height="10" viewBox="0 0 12 14" fill="none" stroke="#4a2f16" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 1h8l-1.2 7a2.8 2.8 0 0 1-5.6 0z" /><rect x="4" y="2.4" width="4" height="4" fill={PASTIS} stroke="none" />
+    </svg>
+  );
+  // un flanc : pastille + boules restantes + verre ; en miroir à droite
+  const flanc = (t, sens) => (
+    <span key={t} style={{ ...S.flanc, flexDirection: sens === "droite" ? "row-reverse" : "row",
+                           justifyContent: sens === "centre" ? "center" : "flex-start" }}>
+      <span style={{ ...S.pastille, width: 7, height: 7, background: TEAM_COLORS[t] }} />
+      {game.mene && <span>{restantes(t)}</span>}
+      {(game.drinks?.[t] || 0) > 0 && <>{verreGrave}<span>{game.drinks[t]}</span></>}
+    </span>
+  );
+  const nomTour = game.phase === "playing" && turnPlayer ? turnPlayer.name.toUpperCase() : null;
+  const ligneCentre = (
+    <span style={S.graveCentre}>
+      MÈNE {game.mene?.num ?? "–"}
+      {chrono !== null && (
+        <> · <span style={{ display: "inline-flex", verticalAlign: -1 }}><Ico nom="horloge" taille={11} couleur="#4a2f16" epaisseur={2.4} /></span>{" "}
+          <span className={chrono <= 5 && !tourneeEnAttente ? "chronoRouge" : ""}>{chrono}</span></>
+      )}
+      {nomTour && <> · <span style={{ color: NOMS_GRAVES[turnPlayer.team] }}>{nomTour}</span></>}
+    </span>
   );
   const fronton = (
-    <div style={S.fronton}>
-      {blocEquipe(equipes[0], false)}
-      {centre}
-      {equipes.slice(1).map((t, i) => blocEquipe(t, i === equipes.length - 2))}
-    </div>
+    <>
+      <div style={S.plaqueOmbre} />
+      <div style={{ ...S.poteau, left: 64 }} />
+      <div style={{ ...S.poteau, right: 64 }} />
+      <div style={S.plaqueBois}>
+        {equipes.map(rail)}
+        {trois ? (
+          <div style={{ ...S.bandeau, top: 70 }}>
+            {flanc(equipes[0], "gauche")}{flanc(equipes[1], "centre")}{flanc(equipes[2], "droite")}
+          </div>
+        ) : (
+          <div style={{ ...S.bandeau, top: 60 }}>
+            {flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}
+          </div>
+        )}
+      </div>
+      {trois && <div style={S.microLigne}>{ligneCentre}</div>}
+    </>
   );
 
   // Rien n'est écrit sur le sable, et rien ne bouge le terrain : messages
@@ -2980,28 +3004,33 @@ const styles = {
   ligneCurseur: { display: "flex", alignItems: "center", gap: 8, minHeight: 32 },
   etiquetteCurseur: { fontSize: 11, fontWeight: 600, letterSpacing: 1.5, width: 78, flexShrink: 0 },
   // Le fronton du boulodrome
-  // Le fronton, plaque de comptage plantée en haut du terrain : une seule
-  // rangée, tout inline, chiffres lumineux
-  fronton: {
-    position: "absolute", top: 6, left: 6, right: 6, zIndex: 3, boxSizing: "border-box", height: 52,
-    background: NUIT, border: "2px solid #10222f", borderRadius: 6,
-    boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(242, 236, 220, 0.35)",
-    padding: "0 8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4,
+  // La plaque de bois à rails, valeurs de maquette-scoreboard.html
+  plaqueBois: {
+    position: "absolute", top: 6, left: 14, right: 14, height: 84, zIndex: 3, boxSizing: "content-box",
+    background: "repeating-linear-gradient(180deg, rgba(122, 90, 53, 0.14) 0 3px, rgba(0, 0, 0, 0) 3px 14px), linear-gradient(180deg, #c59a63, #a87d4b)",
+    border: "3px solid #7a5a35", borderRadius: 8,
+    boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
+    color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
   },
-  frontonEquipe: { flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", gap: 5, borderRadius: 4, padding: "2px 4px", whiteSpace: "nowrap" },
-  frontonNom: { fontWeight: 600, letterSpacing: 1.5 },
-  frontonScore: { lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 10px rgba(255, 216, 77, 0.55)" },
-  frontonInfo: { display: "flex", alignItems: "center", gap: 5, color: CREME, fontSize: 11, fontWeight: 600 },
-  frontonItem: { display: "flex", alignItems: "center", gap: 2 },
-  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 3px", fontWeight: 700, fontSize: 10 },
-  frontonCentre: {
-    flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    padding: "0 8px", borderLeft: "1px solid rgba(242, 236, 220, 0.35)", borderRight: "1px solid rgba(242, 236, 220, 0.35)", whiteSpace: "nowrap",
+  poteau: { position: "absolute", top: 58, width: 9, height: 66, zIndex: 2, background: "linear-gradient(90deg, #9a7a4e, #7a5c38)", borderRadius: 2 },
+  plaqueOmbre: {
+    position: "absolute", top: 114, left: "calc(50% - 125px)", width: 250, height: 14, zIndex: 2,
+    background: "radial-gradient(closest-side, rgba(70, 55, 30, 0.3), rgba(70, 55, 30, 0))", transform: "skewX(-18deg)",
   },
-  frontonMene: { fontSize: 9, fontWeight: 600, letterSpacing: 2, color: CREME },
-  frontonLigne2: { display: "flex", alignItems: "center", gap: 6 },
-  frontonChrono: { display: "flex", alignItems: "center", gap: 2, fontSize: 14, fontWeight: 700 },
-  frontonTour: { fontSize: 8.5, fontWeight: 600, letterSpacing: 1, color: CREME, opacity: 0.9, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis" },
+  rail: {
+    position: "absolute", left: 10, right: 10, borderTop: "2px solid #7a5a35", borderBottom: "2px solid #7a5a35",
+    display: "flex", alignItems: "center", padding: "0 4px",
+  },
+  railChiffre: { flex: 1, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", lineHeight: 1 },
+  jeton: {
+    position: "absolute", top: "50%", transform: "translate(-50%, -50%)", width: 15, height: 15, borderRadius: "50%",
+    color: "#ffffff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center",
+    transition: "left .6s cubic-bezier(.3, .8, .4, 1)", // le jeton glisse jusqu'à sa case
+  },
+  bandeau: { position: "absolute", left: 12, right: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },
+  flanc: { flex: 1, display: "flex", alignItems: "center", gap: 3, minWidth: 0 },
+  graveCentre: { flex: "0 0 auto", fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", whiteSpace: "nowrap" },
+  microLigne: { position: "absolute", top: 99, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif" },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",
