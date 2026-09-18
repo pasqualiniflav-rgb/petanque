@@ -88,6 +88,20 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | D7 | Cri en plaque en position absolue, 2,5 s ; plus aucun élément de flux ajouté ou retiré autour du terrain (ardoise, plaques d'info et cri en surimpression, bloc de commandes à hauteur fixe) — cadre mesuré identique avant/pendant/après | ✅ |
 | — | Au passage : numéro de version `rev` rendu monotone (`max(Date.now(), rev + 1)`) — deux téléphones aux horloges décalées pouvaient s'ignorer mutuellement leurs états | ✅ |
 
+## 🎯 Sprint pétanque vraie — sensations de jeu
+
+| # | Item | État |
+|---|------|------|
+| A1 | Vitesses accélérées à portées conservées : ×2,2 sur le classique (son roulé s'éteint lentement, il fallait ça pour ~2 s), ×1,7 sur le long ; `mu/(1−mu)` divisé d'autant (le frottement s'applique dès la frame d'atterrissage) ; sous-pas 2 et 12 (< 11 px). `tests/vitesse.js` : portées ≤ 1,96 % de la référence figée, pointés 2,1–2,35 s | ✅ |
+| A2 | Chocs mats : restitution tir 0,9 → 0,6 (la frappante garde 20 % vers l'avant, la frappée part avec 80 %), roulé 0,45 → 0,3 ; dérapage plus mordant (`skidMu` 0,80 / 0,78). Carreau toujours possible (39 px de geste sur le classique, la frappante meurt à 16 px de l'impact). Déterminisme à deux navigateurs : recalcul hors navigateur identique au bit près | ✅ |
+| B3 | Largeur interne du canvas adaptée au ratio de la boîte (ResizeObserver, 396–640 px), sable sur toute la largeur, lignes centrées et inchangées, coordonnées physiques intouchées. Mesuré en 360×640 : 0 px de côté | ✅ |
+| C4 | Cris du Sud à partir de la 3ᵉ boule de la mène | ✅ |
+| C5 | Pointer / Tirer toujours visibles, grisés hors tour | ✅ |
+| C6 | Lancer seul : un bot Pointeur complète une équipe vide, bandeau « Marius complète Équipe rouge » | ✅ |
+| C7 | Mini-didacticiel en 3 étapes illustrées à la première partie sur l'appareil, revoyable depuis l'aide | ✅ |
+| D8 | Backlog v2 : page d'accueil hub | ✅ |
+| — | Au passage : un joueur qui rejoint pendant un lancer n'est plus effacé par le commit (fusion des joueurs avant l'écriture) | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
@@ -99,6 +113,7 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | 13 | **Matchmaking public (Elo vs inconnus)** | ⏸️ Conservé mais **dépriorisé** (analyse concurrentielle : le poison de la catégorie) — à rouvrir quand le jeu entre amis tournera fort | L | 9, 12 |
 | 14 | **Mode 2 équipes** | Le format classique 1 c. 1 / doublette / triplette, nécessaire pour un Elo sérieux | S | — |
 | 15 | **Spectateurs & partage** | Lien spectateur d'une partie en cours, replay complet d'une partie finie | M | — |
+| 36 | **Page d'accueil hub** | Partie rapide 1-clic (vs bot, sans alcool, terrain classique), multijoueur, classement Elo, boutique | M | 9 |
 
 ## 🏔️ v3 — Contenus & profondeur
 
