@@ -102,6 +102,18 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | D8 | Backlog v2 : page d'accueil hub | ✅ |
 | — | Au passage : un joueur qui rejoint pendant un lancer n'est plus effacé par le commit (fusion des joueurs avant l'écriture) | ✅ |
 
+## 🧭 Sprint cohérence — retours de partie
+
+| # | Item | État |
+|---|------|------|
+| A1 | Une boule qui touche une ligne de côté est morte, comme au fond : elle garde sa vitesse, roule hors des lignes sans collision, reste grisée. `tests/mortes.js` (frôler la ligne = morte, 2 px avant = vivante) ; déterminisme vérifié à deux navigateurs | ✅ |
+| B2 | Ivresse : moments de clarté — le flou/tangage oscille entre net et trouble, fenêtres de netteté de 54 % du cycle au niveau 1 à 3 % au niveau 6, cycle qui s'allonge. CSS seulement | ✅ |
+| B3 | Annonce de tournée reçue dans le même bandeau que les cris du Sud, plus d'écran sombre ; pop-in de choix conforme à la maquette (elle paraissait en serif tant que les polices ne chargeaient pas) | ✅ |
+| B4 | Victoire : plaque émaillée centrée verticalement, typo de la charte | ✅ |
+| C6 | Marge de sécurité en bas (24 px + `env(safe-area-inset-bottom)`, `viewport-fit=cover`) ; bouton plein écran (SVG) là où l'API existe (Android, bureau) | ✅ |
+| C7 | Accueil : « CRÉER UNE PARTIE » (code tiré, entrée directe) et « REJOINDRE AVEC UN CODE » ; un lien `?partie=CODE` affiche « REJOINDRE LA PARTIE CODE » | ✅ |
+| C8 | Partage : `navigator.share` (feuille native), sinon presse-papier + bandeau « Lien copié ! » | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
