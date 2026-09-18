@@ -1570,7 +1570,7 @@ function PanneauAide({ fermer }) {
   return (
     <div style={S.voile} onClick={fermer}>
       <div style={{ ...S.plaque, maxWidth: 400, gap: 10 }} onClick={e => e.stopPropagation()}>
-        <h2 style={S.plaqueTitre}>LA PÉTANQUE EN DEUX MINUTES</h2>
+        <h2 style={S.plaqueTitre}>PÉTANQUE ! — LES RÈGLES EN DEUX MINUTES</h2>
         {section("Le but",
           `Le premier à ${TARGET} points gagne. À chaque mène, l'équipe qui a la boule
            la plus proche du cochonnet marque un point par boule mieux placée que la
