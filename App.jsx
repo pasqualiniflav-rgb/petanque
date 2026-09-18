@@ -1348,26 +1348,19 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   // lumière de fin d'après-midi sur l'ensemble de la scène
   ctx.drawImage(voileLumiere(), 0, 0);
 
-  // Visée, en coordonnées écran, ancrée en bas au centre là où le joueur se
-  // tient : direction seule — trait plein en pointé, pointillé en tir —
-  // ni jauge de force ni point de chute, la distance se jauge au geste.
+  // Repère de visée, en coordonnées écran, ancré en bas au centre là où le
+  // joueur se tient : une courte ligne pointillée à faible opacité, qui
+  // s'estompe à mesure que le geste s'allonge. La direction se devine.
   if (aim) {
     const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - 30;
     const rad = (aim.angle * Math.PI) / 180;
-    const len = 120;
-    const ex = ax + Math.sin(rad) * len, ey = ay - Math.cos(rad) * len;
+    const len = 52;
+    const alpha = 0.38 - 0.28 * Math.min(1, aim.progression || 0);
     ctx.save();
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.strokeStyle = "#6b573a"; ctx.fillStyle = "#6b573a"; ctx.lineWidth = 2;
-    if (aim.mode === "tir") ctx.setLineDash([6, 5]);
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
-    ctx.setLineDash([]);
-    const t = Math.atan2(ey - ay, ex - ax);
-    ctx.beginPath();
-    ctx.moveTo(ex + Math.cos(t) * 9, ey + Math.sin(t) * 9);
-    ctx.lineTo(ex + Math.cos(t + 2.6) * 9, ey + Math.sin(t + 2.6) * 9);
-    ctx.lineTo(ex + Math.cos(t - 2.6) * 9, ey + Math.sin(t - 2.6) * 9);
-    ctx.closePath(); ctx.fill();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `rgba(107,87,58,${alpha.toFixed(3)})`; ctx.lineWidth = 2;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(ax, ay - 14); ctx.lineTo(ax + Math.sin(rad) * len, ay - 14 - Math.cos(rad) * len); ctx.stroke();
     ctx.restore();
   }
 
@@ -1375,7 +1368,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const mw = 40, mh = Math.round(mw * T.L / T.W);
-    const mx = VIEW_W - mw - 6, my = SKY_H + 6, s = mw / T.W;
+    const mx = VIEW_W - mw - 6, my = SKY_H + 52, s = mw / T.W; // sous le fronton planté en haut
     // petite plaquette posée sur le terrain, cerclée de jaune pastis
     ctx.fillStyle = "rgba(38,30,14,0.5)";
     ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
@@ -1417,6 +1410,7 @@ const CSS_BASE = `
 .bs.creux{background:transparent}
 .bi{width:40px;height:40px;background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;color:${NUIT};font-size:18px;font-weight:700}
 .bi.g{width:46px;height:46px;font-size:20px}
+.bi.p{width:36px;height:36px;font-size:16px}
 .bi.off svg{opacity:.35}
 .bp:active,.bs:active,.bi:active{transform:translateY(3px);box-shadow:none}
 .bp:disabled{opacity:.6;cursor:default}
@@ -1641,9 +1635,6 @@ export default function Petanque() {
   });
   const [geste, setGeste] = useState(null); // { angle, power, valide } pendant le glissé
   const gesteRef = useRef(null);
-  // Les rappels de geste s'effacent après les deux premiers lancers du
-  // joueur — état local, rien de stocké
-  const [lancersFaits, setLancersFaits] = useState(0);
   // Le bandeau de résultat s'affiche quelques secondes puis disparaît de lui-même
   const [banniere, setBanniere] = useState(null);
   const derniereMeneAnnonceeRef = useRef(null);
@@ -1652,7 +1643,7 @@ export default function Petanque() {
     if (!lr || game.phase !== "playing") { setBanniere(null); return; }
     if (derniereMeneAnnonceeRef.current === lr.mene) return;
     derniereMeneAnnonceeRef.current = lr.mene;
-    setBanniere(`${CRIS[lr.mene % CRIS.length]} ${TEAM_NAMES[lr.team].replace("Équipe ", "")} marque ${lr.pts} pt${lr.pts > 1 ? "s" : ""} — mène ${lr.mene}`);
+    setBanniere(`${CRIS[lr.mene % CRIS.length]} ${TEAM_NAMES[lr.team].replace("Équipe ", "").toUpperCase()} marque ${lr.pts} pt${lr.pts > 1 ? "s" : ""} — mène ${lr.mene}`);
     const t = setTimeout(() => setBanniere(null), 7000);
     return () => clearTimeout(t);
   }, [game?.lastResult?.mene, game?.phase]);
@@ -1827,7 +1818,7 @@ export default function Petanque() {
     const moi = g.players.find(p => p.id === meIdRef.current);
     const ivresse = Math.min(6, (g.drinks && moi && g.drinks[moi.team]) || 0);
     const who = g.players.find(p => p.id === g.replay.thrown.pid);
-    setNotice(etiquette || (who ? `${who.name} joue…` : "Lancer en cours…"));
+    if (etiquette) setNotice(etiquette);
     poserAnimating(true);
     const ctx = cv.getContext("2d");
     const marquer = !etiquette; // un « Revoir » ne recreuse pas le terrain
@@ -2006,11 +1997,10 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    const modeVisee = cochToThrow ? "point" : mode;
-    const visee = geste ? { angle: geste.angle, mode: modeVisee }
-      : (myTurn && !gel && curseurs ? { angle, mode: modeVisee } : null);
+    const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75 }
+      : (myTurn && !gel && curseurs ? { angle, progression: 0 } : null);
     drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, mode, cochToThrow]);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs]);
 
   // --- entrée -----------------------------------------------------
   async function join() {
@@ -2175,7 +2165,6 @@ export default function Petanque() {
     const rad = ((angleV + noise) * Math.PI) / 180;
     const genre = !st.mene.cochonnet ? "coch" : modeV === "tir" ? "tir" : "point";
     const thrown = corpsLance(Ts, genre, puissance, rad, genre === "coch" ? { pid } : { team: lanceur.team, pid });
-    if (pid === meId && !auto) setLancersFaits(n => n + 1);
     bodies.push({ ...thrown });
     // Annonce immédiate du lancer : les autres appareils le rejouent en direct,
     // au même top départ — la physique déterministe garantit le même résultat
@@ -2192,7 +2181,6 @@ export default function Petanque() {
     annonce.replay = { id: replayMeta.id, startAt: replayMeta.startAt, before: replayMeta.before, thrown };
     annonce.enCours = true; // levé par le commit
     saveGame(code, annonce); // sans attendre
-    setNotice("Tout le monde regarde…");
     // Le canvas peut manquer (écran d'accueil, partie terminée) : le lancer
     // doit aboutir quand même, sinon la partie reste figée sur ce coup.
     const ctx = canvasRef.current ? canvasRef.current.getContext("2d") : null;
@@ -2210,7 +2198,7 @@ export default function Petanque() {
         setNotice("Souci d'affichage pendant le lancer — le jeu se resynchronise.");
       }
     };
-    setTimeout(() => { setNotice(""); requestAnimationFrame(loop); }, Math.max(0, replayMeta.startAt - Date.now()));
+    setTimeout(() => requestAnimationFrame(loop), Math.max(0, replayMeta.startAt - Date.now()));
   }
 
   async function commit(st, bodies, thrown, replayMeta, pid, auto) {
@@ -2318,9 +2306,12 @@ export default function Petanque() {
   };
 
   const posCanvas = e => {
+    // L'image est ajustée et centrée dans la boîte (object-fit: contain) :
+    // on retrouve son échelle et ses décalages
     const r = e.currentTarget.getBoundingClientRect();
-    const k = VIEW_W / r.width; // le canvas est mis à l'échelle par le CSS
-    return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k };
+    const k = Math.min(r.width / VIEW_W, r.height / CANVAS_H);
+    const dx = (r.width - VIEW_W * k) / 2, dy = (r.height - CANVAS_H * k) / 2;
+    return { x: (e.clientX - r.left - dx) / k, y: (e.clientY - r.top - dy) / k };
   };
 
   const surPointerDown = e => {
@@ -2383,8 +2374,8 @@ export default function Petanque() {
   // Les outils : rejouer (en partie, quand il y a un coup à revoir et que
   // rien ne bouge), cigales, musique, aide, maison (en partie).
   const outils = (enPartie, grand) => {
-    const cl = "bi" + (grand ? " g" : "");
-    const t = grand ? 22 : 20;
+    const cl = "bi" + (grand ? " g" : enPartie ? " p" : "");
+    const t = grand ? 22 : enPartie ? 18 : 20;
     return (
       <div style={S.outils}>
         {enPartie && game?.replay && !animating && !gel && (
@@ -2581,11 +2572,11 @@ export default function Petanque() {
       {equipes[1] && colonne(equipes[1])}
     </div>
   ) : (
-    <div style={{ ...S.fronton, flexDirection: "column", gap: 4 }}>
+    <div style={{ ...S.fronton, flexDirection: "column", gap: 2 }}>
       <div style={{ display: "flex", gap: 8 }}>{equipes.map(colonne)}</div>
-      <div style={{ ...S.frontonCentre, flex: "none", flexDirection: "row", gap: 14, borderLeft: "none", borderRight: "none",
-                    borderTop: "1px solid rgba(242,236,220,0.35)", paddingTop: 4 }}>
-        <span style={S.frontonMene}>MÈNE <span style={{ fontSize: 18 }}>{game.mene?.num ?? "–"}</span></span>
+      <div style={{ ...S.frontonCentre, flex: "none", flexDirection: "row", gap: 12, borderLeft: "none", borderRight: "none",
+                    borderTop: "1px solid rgba(242,236,220,0.35)", paddingTop: 3 }}>
+        <span style={S.frontonMene}>MÈNE <span style={{ fontSize: 15 }}>{game.mene?.num ?? "–"}</span></span>
         {chrono !== null && (
           <span style={S.frontonChrono}>
             <Ico nom="horloge" taille={13} couleur="#ffd84d" epaisseur={2.4} />
@@ -2597,14 +2588,11 @@ export default function Petanque() {
     </div>
   );
 
-  // Les bandeaux « ardoise » du terrain : collés en bas (indication du
-  // geste, message passager) ou en haut (résultat de la mène)
-  const rappelGeste = peutLancer && !curseurs && lancersFaits < 2;
-  const texteBas = notice
-    || (geste ? (geste.valide ? "Relâche pour lancer" : "Tire vers l'arrière…") : null)
-    || (rappelGeste ? (cochToThrow ? "Tu ouvres la mène : touche le terrain et tire vers l'arrière"
-                                    : "Touche le terrain et tire vers l'arrière") : null)
-    || (tourneeEnAttente && !(me && game.tourneePending === me.team) ? `${TEAM_NAMES[game.tourneePending]} choisit à qui offrir la tournée…` : null);
+  // Rien n'est écrit sur le sable : les messages passagers et le résultat
+  // de la mène passent dans une ardoise au-dessus du terrain
+  const texteArdoise = notice
+    || (tourneeEnAttente && !(me && game.tourneePending === me.team) ? `${TEAM_NAMES[game.tourneePending]} choisit à qui offrir la tournée…` : null)
+    || banniere;
 
   const plaqueInfo = (texte, boutons) => (
     <div style={S.plaqueInfo}>
@@ -2627,8 +2615,8 @@ export default function Petanque() {
           <p style={{ ...S.tourneeTxt, animation: "trinquer .8s .55s both" }}>{tourneeAnim}</p>
         </div>
       )}
-      {fronton}
       {outils(true)}
+      {texteArdoise && <div style={S.ardoiseLigne}>{texteArdoise}</div>}
       {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
         <div style={S.voile}>
           <div style={S.plaquePopin}>
@@ -2686,8 +2674,7 @@ export default function Petanque() {
             <canvas ref={canvasRef} width={VIEW_W} height={CANVAS_H} style={S.canvas}
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
-            {banniere && <div style={S.ardoiseHaut}>{banniere}</div>}
-            {texteBas && <div style={S.ardoiseBas}>{texteBas}</div>}
+            {fronton}
           </div>
           {peutLancer && (curseurs || !cochToThrow) && (
             <div style={S.commandes}>
@@ -2701,17 +2688,20 @@ export default function Petanque() {
                 </div>
               )}
               {curseurs && (
-                <div style={S.plaque}>
-                  {cochToThrow && <label style={S.etiquette}>TU OUVRES LA MÈNE : LANCE LE COCHONNET</label>}
-                  <label style={S.etiquette}>DIRECTION</label>
-                  <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
-                  <label style={S.etiquette}>{!cochToThrow && mode === "tir" ? "DISTANCE DE TIR" : "FORCE"}</label>
-                  <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
+                <div style={S.plaqueCurseurs}>
+                  <div style={S.ligneCurseur}>
+                    <span style={S.etiquetteCurseur}>DIRECTION</span>
+                    <input type="range" min={-T.angleMax} max={T.angleMax} value={angle} onChange={e => setAngle(+e.target.value)} style={S.range} />
+                  </div>
+                  <div style={S.ligneCurseur}>
+                    <span style={S.etiquetteCurseur}>{!cochToThrow && mode === "tir" ? "DISTANCE" : "FORCE"}</span>
+                    <input type="range" min={25} max={100} value={power} onChange={e => setPower(+e.target.value)} style={S.range} />
+                  </div>
                   <div style={S.rangee}>
-                    <button className="bp" style={{ flex: 1 }} onClick={() => throwBoule()}>
+                    <button className="bp" style={{ flex: 1, minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
                       {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
                     </button>
-                    <button className="bs" style={{ width: 50, padding: 0 }} aria-label="Lancer au doigt" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" /></button>
+                    <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Lancer au doigt" title="Lancer au doigt" onClick={() => basculerCurseurs(false)}><Ico nom="engrenage" /></button>
                   </div>
                 </div>
               )}
@@ -2740,7 +2730,7 @@ const styles = {
     height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
     color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "stretch",
-    padding: 8, boxSizing: "border-box", gap: 8,
+    padding: "6px 0 6px", boxSizing: "border-box", gap: 6, // bord à bord
     maxWidth: 520, margin: "0 auto", // sur grand écran, le jeu reste une colonne
   },
   enseigne: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 8, textAlign: "center" },
@@ -2785,7 +2775,7 @@ const styles = {
   rangee: { display: "flex", gap: 8, alignItems: "stretch" },
   segment: { flex: 1, padding: "10px 6px", fontSize: 15, letterSpacing: 1, minHeight: 46 },
   large: { width: "100%", maxWidth: 390, boxSizing: "border-box" },
-  outils: { display: "flex", justifyContent: "center", gap: 8 },
+  outils: { display: "flex", justifyContent: "center", gap: 8, padding: "0 6px" },
   pastille: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0 },
   equipeTete: { display: "flex", alignItems: "center", gap: 8 },
   equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
@@ -2795,50 +2785,55 @@ const styles = {
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
     padding: "7px 12px", textAlign: "center", borderRadius: 4, boxSizing: "border-box",
   },
-  ardoiseBas: {
-    position: "absolute", left: 0, right: 0, bottom: 0, background: ARDOISE, color: CREME,
-    fontSize: 12, fontWeight: 500, letterSpacing: 0.5, padding: "7px 12px", textAlign: "center",
-    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-  },
-  ardoiseHaut: {
-    position: "absolute", left: 0, right: 0, top: 0, background: ARDOISE, color: CREME,
-    fontSize: 12, fontWeight: 500, letterSpacing: 0.5, padding: "7px 12px", textAlign: "center",
-    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+  // Ligne d'ardoise au-dessus du terrain (messages passagers, résultat)
+  ardoiseLigne: {
+    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
+    padding: "5px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
   // Le terrain : pleine largeur, fin cadre bois ; les bandeaux s'y collent
+  // Le terrain : bord à bord, fin cadre bois, fond sable uni ; le fronton
+  // est planté dessus, en haut
   cadreTerrain: {
     position: "relative", flex: 1, minHeight: 0, width: "100%", boxSizing: "border-box",
-    border: "6px solid #8a6b43", borderRadius: 4, overflow: "hidden",
-    // ciel puis sable, à la proportion de la bande de décor : les marges
-    // du canvas, quand la hauteur le contraint, se fondent dans la scène
-    background: `linear-gradient(180deg, #cfe6ee 0, #dcc191 ${(100 * SKY_H / CANVAS_H).toFixed(1)}%, #d8c49a ${(100 * SKY_H / CANVAS_H).toFixed(1)}%, #d8c49a 100%)`,
-    display: "flex", justifyContent: "center", alignItems: "flex-start",
+    borderTop: "5px solid #8a6b43", borderBottom: "5px solid #8a6b43", overflow: "hidden",
+    background: "#d8c49a", display: "flex", justifyContent: "center", alignItems: "flex-start",
   },
+  // Le canvas remplit le cadre ; l'image garde son ratio, centrée — le
+  // fronton couvre l'éventuel vide du haut
   canvas: {
-    display: "block", height: "100%", maxWidth: "100%", touchAction: "none",
-    userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+    display: "block", width: "100%", height: "100%", objectFit: "contain", objectPosition: "50% 50%",
+    touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
-  commandes: { display: "flex", flexDirection: "column", gap: 8 },
+  commandes: { display: "flex", flexDirection: "column", gap: 6, padding: "0 6px" },
+  plaqueCurseurs: {
+    background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
+    boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", padding: "6px 8px", display: "flex", flexDirection: "column", gap: 4,
+  },
+  ligneCurseur: { display: "flex", alignItems: "center", gap: 8, minHeight: 30 },
+  etiquetteCurseur: { fontSize: 11, fontWeight: 600, letterSpacing: 1.5, width: 78, flexShrink: 0 },
   // Le fronton du boulodrome
+  // Le fronton, panneau planté en haut du terrain : compact, toutes les
+  // informations (scores, MÈNE N, chrono, qui joue, boules, verres)
   fronton: {
-    width: "100%", boxSizing: "border-box", background: NUIT, border: "2px solid #10222f", borderRadius: 6,
+    position: "absolute", top: 6, left: 6, right: 6, zIndex: 3, boxSizing: "border-box",
+    background: NUIT, border: "2px solid #10222f", borderRadius: 6,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(242, 236, 220, 0.35)",
-    padding: "10px 12px 8px", display: "flex", alignItems: "stretch", gap: 8,
+    padding: "5px 8px 4px", display: "flex", alignItems: "stretch", gap: 6,
   },
-  frontonCol: { flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, borderRadius: 4, padding: "2px 0" },
-  frontonNom: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, letterSpacing: 2.5, whiteSpace: "nowrap" },
-  frontonScore: { fontSize: 42, lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 12px rgba(255, 216, 77, 0.55)" },
-  frontonInfo: { display: "flex", alignItems: "center", gap: 10, color: CREME, fontSize: 13, fontWeight: 600, minHeight: 16 },
+  frontonCol: { flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, borderRadius: 4, padding: "1px 0" },
+  frontonNom: { display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: 2, whiteSpace: "nowrap" },
+  frontonScore: { fontSize: 30, lineHeight: 1, fontWeight: 700, color: "#ffd84d", textShadow: "0 0 12px rgba(255, 216, 77, 0.55)" },
+  frontonInfo: { display: "flex", alignItems: "center", gap: 8, color: CREME, fontSize: 12, fontWeight: 600, minHeight: 14 },
   frontonItem: { display: "flex", alignItems: "center", gap: 3 },
-  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 5px", fontWeight: 700, fontSize: 12 },
+  frontonPoint: { background: PASTIS, color: NUIT, borderRadius: 3, padding: "0 4px", fontWeight: 700, fontSize: 11 },
   frontonCentre: {
-    flex: "0 0 84px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+    flex: "0 0 82px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1,
     borderLeft: "1px solid rgba(242, 236, 220, 0.35)", borderRight: "1px solid rgba(242, 236, 220, 0.35)",
   },
-  frontonMene: { fontSize: 10, fontWeight: 600, letterSpacing: 3, color: CREME },
-  frontonMeneNum: { fontSize: 26, lineHeight: 1, fontWeight: 700, color: CREME },
-  frontonChrono: { display: "flex", alignItems: "center", gap: 4, marginTop: 2, fontSize: 17, fontWeight: 700 },
-  frontonTour: { fontSize: 10, fontWeight: 600, letterSpacing: 1.5, color: CREME, opacity: 0.9, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 84 },
+  frontonMene: { fontSize: 9, fontWeight: 600, letterSpacing: 2.5, color: CREME },
+  frontonMeneNum: { fontSize: 20, lineHeight: 1, fontWeight: 700, color: CREME },
+  frontonChrono: { display: "flex", alignItems: "center", gap: 3, fontSize: 15, fontWeight: 700 },
+  frontonTour: { fontSize: 9, fontWeight: 600, letterSpacing: 1.2, color: CREME, opacity: 0.9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 80 },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",
