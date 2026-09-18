@@ -59,6 +59,22 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | C10 | Pop-in tournée : plaque à double liseré, verre dessiné, « PASSER · N » | ✅ |
 | C11 | Victoire : plaque crème contrastée, trophée dessiné, confettis conservés | ✅ |
 
+## 🔧 Sprint retouches — retours de partie après le polish
+
+| # | Item | État |
+|---|------|------|
+| A1 | Bot à qui on passe la main : reproduit à deux navigateurs (hôte parti → chrono à 0, rien ne se passe). Règle commune `doitJouerPourLeBot` : l'hôte, sinon n'importe quel client après 3 s de grâce, premier écrit gagne ; garde `enCours` contre les doubles lancers ; hôte remplacé joue pour son propre bot ; même grâce pour les tournées. `tests/bots.js` | ✅ |
+| B2 | Fronton compact planté en haut du terrain, terrain bord à bord sur toute la hauteur, toutes les infos conservées | ✅ |
+| B3 | Bords flous (dégradé) des côtés du terrain supprimés | ✅ |
+| B4 | Panneau des curseurs compacté (étiquettes en ligne, une rangée par curseur) | ✅ |
+| B5 | Plus aucun texte sur le sable : messages et résultat dans une ardoise au-dessus du terrain, rappels de geste supprimés | ✅ |
+| B6 | Visée : courte ligne pointillée à faible opacité qui s'estompe pendant le glissé | ✅ |
+| C7 | Polices diagnostiquées « error » (chemins de `polices.css` résolus en `/fonts/fonts/`) : `@font-face` désormais inlinés dans `index.html`, chargement vérifié (`document.fonts.check`) | ✅ |
+| C8 | Alternatives Passion One / Fraunces : non préparées, la règle ne s'applique qu'une fois les vraies polices vues | ⏸️ |
+| C9 | Plus de « La Pétanque » : l'aide s'intitule « PÉTANQUE ! — LES RÈGLES EN DEUX MINUTES » | ✅ |
+| D10 | Salon : phrase sous le niveau des bots supprimée | ✅ |
+| D11 | Accueil : accroche « 9 JOUEURS · 13 POINTS · 1 LIEN » | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
