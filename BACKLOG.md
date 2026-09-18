@@ -75,6 +75,19 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 | D10 | Salon : phrase sous le niveau des bots supprimée | ✅ |
 | D11 | Accueil : accroche « 9 JOUEURS · 13 POINTS · 1 LIEN » | ✅ |
 
+## 📐 Sprint affinage mobile — retours après re-test
+
+| # | Item | État |
+|---|------|------|
+| A1 | Fronton sur une seule rangée (52 px) en surimpression : « ● CIEL 01 ●2 \| MÈNE 4 ⏱19 À TOI \| ROUGE 03 ●3 ● », chiffres lumineux conservés | ✅ |
+| B2 | Sable sur toute la largeur du canvas, bandes hors-jeu visibles (côtés 28 px, fond 28 px, arrière 8 px), plus de remplissage flou | ✅ |
+| B3 | Boules sorties : marquées mortes mais gardent leur vitesse, roulent sans collision jusqu'à la planche, restent grisées (55 %) et enregistrées `dead:true`, exclues du score et des tours. `tests/mortes.js` ; vérifié à deux navigateurs : position enregistrée = recalcul node au bit près | ✅ |
+| C4 | Curseurs : poignées de 28 px, étiquette et curseur en ligne, LANCER pleine largeur, bloc ≤ 160 px | ✅ |
+| D5 | Messages de fin de mène supprimés | ✅ |
+| D6 | Cri du Sud quand l'équipe qui tient le point change (premier point compris), rotation sur compteur, pas sur le lancer qui termine la mène | ✅ |
+| D7 | Cri en plaque en position absolue, 2,5 s ; plus aucun élément de flux ajouté ou retiré autour du terrain (ardoise, plaques d'info et cri en surimpression, bloc de commandes à hauteur fixe) — cadre mesuré identique avant/pendant/après | ✅ |
+| — | Au passage : numéro de version `rev` rendu monotone (`max(Date.now(), rev + 1)`) — deux téléphones aux horloges décalées pouvaient s'ignorer mutuellement leurs états | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
