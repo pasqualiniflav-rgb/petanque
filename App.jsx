@@ -2413,7 +2413,7 @@ export default function Petanque() {
         {aide && <PanneauAide fermer={() => setAide(false)} />}
         <div style={S.enseigne}>
           <h1 style={S.titre}>PÉTANQUE&nbsp;!</h1>
-          <div style={S.accroche}>LE JEU D'APÉRO — 9 JOUEURS · 13 POINTS · 1 LIEN</div>
+          <div style={S.accroche}>9 JOUEURS · 13 POINTS · 1 LIEN</div>
         </div>
         <div style={S.plaque}>
           <label style={S.etiquette} htmlFor="nom">NOM DE JOUEUR</label>
@@ -2495,7 +2495,6 @@ export default function Petanque() {
                 <button key={k} className={niveauBot === k ? "bp" : "bs"} style={S.segment} onClick={() => setNiveauBot(k)}>{NIVEAUX_BOT[k].nom.toUpperCase()}</button>
               ))}
             </div>
-            <p style={S.note}>Un bot joue tout seul — de quoi jouer en solo. Le détail est dans l'aide.</p>
             <label style={S.etiquette}>TOURNÉES DE PASTIS</label>
             <div style={S.rangee}>
               <button className={!game.sansTournee ? "bp" : "bs"} style={S.segment} onClick={() => setSansTournee(false)}>AVEC</button>
