@@ -10,10 +10,9 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 // sable couvre toute la fenêtre, les lignes ne bougent pas, et les boules
 // sorties viennent s'y arrêter.
 const HORS_G = 28, HORS_H = 28, HORS_B = 8;
-// Au-dessus des lignes, la fenêtre montre plus de sable que la planche
-// physique (HORS_H) : c'est là que la plaque de score est plantée, sous
-// les façades et les platanes. Rendu seulement.
-const HAUT_VUE = 64;
+// Bande de sable vue au-dessus de la ligne du fond (les pieds des poteaux
+// du score s'y posent). Rendu seulement.
+const HAUT_VUE = 28;
 // La largeur de la fenêtre s'adapte au ratio de l'appareil (voir
 // reglerLargeurVue) : le sable couvre tout, pas un pixel de fond de page
 // sur les côtés. Les coordonnées physiques, elles, ne bougent jamais.
@@ -23,7 +22,9 @@ const SKY_H = 84;                  // bande de décor au-dessus du terrain
 const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
 export function reglerLargeurVue(w) {
-  const v = Math.max(340 + 2 * HORS_G, Math.min(640, Math.ceil(w))); // vers le haut : pas un pixel de côté
+  // Vers le haut, pas un pixel de côté ; sur un téléphone étroit la fenêtre
+  // descend jusqu'à la largeur du terrain, les bandes de côté se rognent
+  const v = Math.max(340, Math.min(640, Math.ceil(w)));
   if (v === VIEW_W) return false;
   VIEW_W = v;
   decorCache = null; voileCache = null; // pré-rendus à la largeur de la fenêtre
@@ -593,6 +594,7 @@ function normalize(st) {
   st.absents = st.absents || {}; // lancers manqués d'affilée, par joueur
   st.sansTournee = !!st.sansTournee; // option de l'hôte : ni tournées ni ivresse
   st.enCours = !!st.enCours; // un lancer est annoncé mais pas encore joué jusqu'au bout
+  st.sansCris = !!st.sansCris; // option de l'hôte : plus de cris du Sud
   st.lastTournee = st.lastTournee || null;
   st.streak = st.streak || null;
   st.terrain = st.terrain || "classique";
@@ -1778,6 +1780,7 @@ export default function Petanque() {
   const cadreRef = useRef(null);
   const [largeurVue, setLargeurVue] = useState(VIEW_W);
   const [echelleVue, setEchelleVue] = useState(1); // pixels écran par unité de canvas
+  const [largeurBoite, setLargeurBoite] = useState(390);
   useEffect(() => {
     const el = cadreRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1787,6 +1790,7 @@ export default function Petanque() {
       const w = (CANVAS_H * bw) / bh;
       if (reglerLargeurVue(w)) setLargeurVue(VIEW_W);
       setEchelleVue(bh / CANVAS_H);
+      setLargeurBoite(bw);
     };
     mesurer();
     const ro = new ResizeObserver(mesurer);
@@ -1801,7 +1805,7 @@ export default function Petanque() {
     const tenant = m.cochonnet && m.boules.some(b => !b.dead) ? (scoreMene(game)?.team ?? null) : null;
     const ref = tenantRef.current;
     if (ref.mene !== m.num) { ref.mene = m.num; ref.team = tenant; return; } // nouvelle mène : on repart sans crier
-    if (tenant && tenant !== ref.team && m.boules.length >= 3) { // avant, prendre le point est trivial
+    if (tenant && tenant !== ref.team && m.boules.length >= 3 && !game.sansCris) { // avant, prendre le point est trivial
       const n = criCompteurRef.current++;
       crier(`${CRIS[n % CRIS.length]} ${TEAM_NAMES[tenant].replace("Équipe ", "").toUpperCase()} PREND LE POINT`, 2500);
       ref.team = tenant;
@@ -2260,6 +2264,7 @@ export default function Petanque() {
 
   const setBoules = n => mutate(g => { g.boulesEach = n; });
   const setSansTournee = v => mutate(g => { g.sansTournee = !!v; });
+  const setSansCris = v => mutate(g => { g.sansCris = !!v; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
 
   async function start() {
@@ -2592,7 +2597,7 @@ export default function Petanque() {
         {aide && <PanneauAide fermer={() => setAide(false)} />}
         <div style={S.enseigne}>
           <h1 style={S.titre}>PÉTANQUE&nbsp;!</h1>
-          <div style={S.accroche}>9 JOUEURS · 13 POINTS · 1 LIEN</div>
+          <div style={S.accroche}>JUSQU'À 9 JOUEURS</div>
         </div>
         <div style={S.plaque}>
           <label style={S.etiquette} htmlFor="nom">NOM DE JOUEUR</label>
@@ -2691,6 +2696,11 @@ export default function Petanque() {
               <button className={!game.sansTournee ? "bp" : "bs"} style={S.segment} onClick={() => setSansTournee(false)}>AVEC</button>
               <button className={game.sansTournee ? "bp" : "bs"} style={S.segment} onClick={() => setSansTournee(true)}>SANS</button>
             </div>
+            <label style={S.etiquette}>CRIS DU SUD</label>
+            <div style={S.rangee}>
+              <button className={!game.sansCris ? "bp" : "bs"} style={S.segment} onClick={() => setSansCris(false)}>AVEC</button>
+              <button className={game.sansCris ? "bp" : "bs"} style={S.segment} onClick={() => setSansCris(true)}>SANS</button>
+            </div>
             <label style={S.etiquette}>TERRAIN</label>
             <div style={S.rangee}>
               {Object.entries(TERRAINS).map(([k, tt]) => (
@@ -2733,7 +2743,7 @@ export default function Petanque() {
     : (!animating && !gel) ? resteTemps : null;
   const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#4b6a44" }; // lisibles sur le bois
   const trois = equipes.length > 2;
-  const railH = trois ? 16 : 20, railPas = trois ? 22 : 26, railTop = trois ? 6 : 8;
+  const railH = trois ? 12 : 16, railPas = trois ? 18 : 22, railTop = trois ? 4 : 6;
   const rail = (t, i) => {
     const sc = Math.max(0, Math.min(13, game.scores[t] || 0));
     return (
@@ -2742,7 +2752,7 @@ export default function Petanque() {
           <span key={n} style={{ ...S.railChiffre, visibility: n === sc ? "hidden" : "visible" }}>{n}</span>
         ))}
         {/* le jeton glisse le long du rail jusqu'à sa case (transition CSS) */}
-        <span style={{ ...S.jeton, background: TEAM_COLORS[t], left: `calc(4px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 8px))` }}>{sc}</span>
+        <span style={{ ...S.jeton, width: trois ? 13 : 15, height: trois ? 13 : 15, background: TEAM_COLORS[t], left: `calc(4px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 8px))` }}>{sc}</span>
       </div>
     );
   };
@@ -2771,28 +2781,32 @@ export default function Petanque() {
       {nomTour && <> · <span style={{ color: NOMS_GRAVES[turnPlayer.team] }}>{nomTour}</span></>}
     </span>
   );
-  // Plantée sur le sable qui déborde au-dessus des lignes, juste sous le
-  // sol de la place du village (à 79 % de la bande de décor) : façades et
-  // platanes restent visibles au-dessus. Offsets de la maquette.
-  const hautPlaque = Math.round(0.79 * SKY_H * echelleVue) - 6;
+  // Panneau planté dans la bande de décor (il mord sur les façades, c'est
+  // sa place) : 76 px, poteaux à 28 % et 72 % de sa largeur, pieds posés
+  // 6 px au-dessus de la ligne du fond — jamais dans l'aire de jeu.
+  const hautPlaque = 6;
+  const ligneFond = Math.round((SKY_H + HAUT_VUE) * echelleVue);
+  const pieds = Math.max(hautPlaque + 76 + 4, ligneFond - 6);
+  const hautPoteaux = hautPlaque + 36;
+  const largeurPlaque = largeurBoite - 28;
   const fronton = (
     <>
-      <div style={{ ...S.plaqueOmbre, top: hautPlaque + 108 }} />
-      <div style={{ ...S.poteau, left: 64, top: hautPlaque + 52 }} />
-      <div style={{ ...S.poteau, right: 64, top: hautPlaque + 52 }} />
+      <div style={{ ...S.plaqueOmbre, top: pieds - 5 }} />
+      <div style={{ ...S.poteau, left: 14 + 0.28 * largeurPlaque - 4.5, top: hautPoteaux, height: pieds - hautPoteaux }} />
+      <div style={{ ...S.poteau, left: 14 + 0.72 * largeurPlaque - 4.5, top: hautPoteaux, height: pieds - hautPoteaux }} />
       <div style={{ ...S.plaqueBois, top: hautPlaque }}>
         {equipes.map(rail)}
         {trois ? (
-          <div style={{ ...S.bandeau, top: 70 }}>
+          <div style={{ ...S.bandeau, top: 58, fontSize: 10 }}>
             {flanc(equipes[0], "gauche")}{flanc(equipes[1], "centre")}{flanc(equipes[2], "droite")}
           </div>
         ) : (
-          <div style={{ ...S.bandeau, top: 60 }}>
+          <div style={{ ...S.bandeau, top: 52 }}>
             {flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}
           </div>
         )}
       </div>
-      {trois && <div style={{ ...S.microLigne, top: hautPlaque + 93 }}>{ligneCentre}</div>}
+      {trois && <div style={{ ...S.microLigne, top: hautPlaque + 80 }}>{ligneCentre}</div>}
     </>
   );
 
@@ -2880,10 +2894,10 @@ export default function Petanque() {
             {fronton}
             {surimpressions}
           </div>
-          <div style={{ ...S.commandes, height: curseurs ? 150 : 52 }}>
+          <div style={{ ...S.commandes, height: curseurs ? 150 : 46 }}>
             <div style={S.rangee}>
-              <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
-              <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 17, padding: "10px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
+              <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 16, padding: "6px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
+              <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 16, padding: "6px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
               <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" /></button>
             </div>
             {curseurs && (
@@ -2976,7 +2990,7 @@ const styles = {
   segment: { flex: 1, padding: "10px 6px", fontSize: 15, letterSpacing: 1, minHeight: 46 },
   large: { width: "100%", maxWidth: 390, boxSizing: "border-box" },
   outils: { display: "flex", justifyContent: "center", gap: 8, padding: "0 6px" },
-  pastille: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0 },
+  pastille: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0, boxShadow: "0 0 0 1.5px #4a2f16" }, // liseré : lisible sur bois comme sur crème
   equipeTete: { display: "flex", alignItems: "center", gap: 8 },
   equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
   puces: { display: "flex", flexWrap: "wrap", gap: 6 },
@@ -3025,15 +3039,15 @@ const styles = {
   // Le fronton du boulodrome
   // La plaque de bois à rails, valeurs de maquette-scoreboard.html
   plaqueBois: {
-    position: "absolute", top: 6, left: 14, right: 14, height: 84, zIndex: 3, boxSizing: "content-box",
+    position: "absolute", top: 6, left: 14, right: 14, height: 70, zIndex: 3, boxSizing: "content-box",
     background: "repeating-linear-gradient(180deg, rgba(122, 90, 53, 0.14) 0 3px, rgba(0, 0, 0, 0) 3px 14px), linear-gradient(180deg, #c59a63, #a87d4b)",
     border: "3px solid #7a5a35", borderRadius: 8,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
     color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
   },
-  poteau: { position: "absolute", top: 58, width: 9, height: 66, zIndex: 2, background: "linear-gradient(90deg, #9a7a4e, #7a5c38)", borderRadius: 2 },
+  poteau: { position: "absolute", width: 9, zIndex: 2, background: "linear-gradient(90deg, #9a7a4e, #7a5c38)", borderRadius: 2 },
   plaqueOmbre: {
-    position: "absolute", top: 114, left: "calc(50% - 125px)", width: 250, height: 14, zIndex: 2,
+    position: "absolute", left: "22%", width: "56%", height: 12, zIndex: 2,
     background: "radial-gradient(closest-side, rgba(70, 55, 30, 0.3), rgba(70, 55, 30, 0))", transform: "skewX(-18deg)",
   },
   rail: {
@@ -3044,6 +3058,7 @@ const styles = {
   jeton: {
     position: "absolute", top: "50%", transform: "translate(-50%, -50%)", width: 15, height: 15, borderRadius: "50%",
     color: "#ffffff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center",
+    boxShadow: "0 0 0 1.5px #4a2f16",
     transition: "left .6s cubic-bezier(.3, .8, .4, 1)", // le jeton glisse jusqu'à sa case
   },
   bandeau: { position: "absolute", left: 12, right: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },

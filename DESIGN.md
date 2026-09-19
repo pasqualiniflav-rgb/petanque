@@ -62,7 +62,9 @@ texte crème, une ligne. Disparaît d'elle-même.
 **Scoreboard** : conserver l'esprit panneau lumineux existant ; l'habiller
 en fronton — cadre bleu nuit, chiffres Oswald jaunes lumineux, compteur
 central « MÈNE N » entre les deux équipes (façon panneau de basket),
-pastilles boules restantes et verres en icônes SVG.
+pastilles boules restantes et verres en icônes SVG. Toutes les pastilles
+d'équipe et les jetons portent un liseré brun brûlé `#4a2f16` (1,5 px), lisible
+sur bois comme sur crème.
 
 ## 5. Terrain
 

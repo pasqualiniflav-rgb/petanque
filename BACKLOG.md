@@ -132,6 +132,21 @@ Jeu à 9 joueurs (3 équipes) sans compte, hébergé sur GitHub Pages, synchro t
 
 L'item « scoreboard » (B4 du sprint mobile, B3 polish, A1 affinage) est **fermé** par cette plaque.
 
+## 🧽 Sprint finitions — retours + captures
+
+| # | Item | État |
+|---|------|------|
+| A1 | Règle d'or du tir : portée asservie à la carte du pointé (forme fermée déduite des constantes + ajustement par terrain). `tests/tir.js` : écart pointé/tir ≤ 2 % aux forces 25/50/75 sur les deux terrains | ✅ |
+| A2 | Atterrissage à vide : glisse puis roulé après la chute, 80-84 px classique / 189-219 px long (muTir adouci) ; dérapage post-impact agressif conservé et appliqué à toute boule tirée après un choc — carreau plein fer sec (frappante à 7-10 px). Déterminisme : tir réel joué à deux navigateurs, recalcul hors navigateur identique au bit près | ✅ |
+| B3 | Plaque de 76 px remontée dans la bande de décor (elle mord sur les façades) ; le terrain ne bouge pas, ligne du haut visible, plaque au-dessus de la ligne du fond (87 px contre 124) — aucune boule dessous | ✅ |
+| B4 | Poteaux raccourcis, à 28 % / 72 % de la plaque, pieds 6 px au-dessus de la ligne du fond — jamais dans l'aire de jeu | ✅ |
+| B5 | Sauge officiel, cohérent partout ; liseré `#4a2f16` de 1,5 px sur toutes les pastilles et jetons ; DESIGN.md mis à jour | ✅ |
+| B6 | Parité terrain long : même plaque plantée, mini-carte dessous ; letterbox résolu sur les deux terrains (fenêtre descendue à 340 sur téléphone étroit : canvas 352×640, 0 px de côté) — captures des deux terrains à 390 px | ✅ |
+| C7 | POINTER / TIRER à 44 px, padding resserré, même rangée que l'engrenage ; bloc de commandes 46 px | ✅ |
+| C8 | Accueil : « JUSQU'À 9 JOUEURS » | ✅ |
+| C9 | Salon : « Cris du Sud » Avec/Sans, actifs par défaut ; Sans coupe les cris de prise de point | ✅ |
+| C10 | Messages legacy sur fond noir translucide : aucun ne subsistait (vérifié) ; messages passagers en ardoise opaque de la charte | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
