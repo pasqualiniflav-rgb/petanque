@@ -38,6 +38,10 @@ Tolérance : ±3 % sur les portées. Le script sort en erreur au premier écart.
 hôte disparu, bot arrivé en cours de partie, joueur remplacé, hôte remplacé,
 lancer déjà annoncé) et que le cerveau accepte un joueur remplacé.
 
+`tests/tir.js` vérifie la règle d'or du tir : à force égale il porte à la même
+distance que le pointé (±5 % aux forces 25/50/75/100) et, s'il ne frappe rien,
+glisse puis roule après la chute (60-90 px en classique, 150-220 en long).
+
 `tests/vitesse.js` compare les portées aux valeurs de référence figées avant
 l'accélération (`tests/portees-reference.json`, ±2 %), mesure la durée d'un
 pointé (~2 s), vérifie le déplacement par sous-pas (< 11 px) et que le

@@ -13,7 +13,9 @@ const verif = (ok, msg) => { console.log((ok ? "  ✓ " : "  ✗ ") + msg); if (
 for (const [cle, T] of Object.entries(TERRAINS)) {
   console.log(`\n=== ${T.nom} ===`);
   let pire = 0;
-  for (const genre of ["point", "coch", "tir"]) for (const p of [25, 40, 55, 70, 85, 100]) {
+  // le tir n'est plus comparé à la référence : sa portée est asservie au
+  // pointé (tests/tir.js)
+  for (const genre of ["point", "coch"]) for (const p of [25, 40, 55, 70, 85, 100]) {
     const c = corpsLance(T, genre, p, 0, {}); const b = [c]; let n = 0;
     while (stepPhysics(b, T) && n++ < 1200) {}
     const d = Math.hypot(c.x - T.W / 2, c.y - (T.L - 30));

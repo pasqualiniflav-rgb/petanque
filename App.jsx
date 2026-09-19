@@ -52,13 +52,10 @@ export const TERRAINS = {
     camera: false, subSteps: 2, stopSeuil: 0.2,
     muRoll: 0.9687, angleMax: 25,
     vPoint: p => (2.9 + (p / 100) * 4.6) * 2.2,
-    // Tolérance du carreau : après l'atterrissage la boule tirée ne roule
-    // plus que ~35 px — sans jauge de force, la cible se touchait sur
-    // 60 px de geste, c'était trop facile. Aucun aléa.
-    vTir: 18.7, muTir: 0.59,
-    airTir: p => Math.max(60, 140 + (p / 100) * 360 - 26),
-    // Dérapage après un choc : la boule frappée part sec et meurt vite,
-    // la frappante meurt quasi sur place
+    // Atterrissage à vide : la boule tirée glisse puis roule ~75 px
+    // (muTir), voir airTir plus bas. Dérapage après un choc : la frappée
+    // part sec et meurt vite, la frappante meurt quasi sur place (skidMu).
+    vTir: 18.7, muTir: 0.8, airMin: 40, tirAjust: 0.965,
     cochMin: 170, skidSeuil: 8.8, skidMu: 0.8,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
     // Cochonnet : plus léger, il part en cloche plus courte et va un peu
@@ -70,13 +67,23 @@ export const TERRAINS = {
     camera: true, subSteps: 12, stopSeuil: 0.34,
     muRoll: 0.9582, angleMax: 8,
     vPoint: p => (12 + (p / 100) * 58) * 1.7,
-    vTir: 37.4, muTir: 0.7765,
-    airTir: p => Math.max(150, 300 + (p / 100) * 2300 - 60),
+    vTir: 37.4, muTir: 0.832, airMin: 100, tirAjust: 0.985, // glisse ~185 px
     cochMin: 1400, skidSeuil: 20.4, skidMu: 0.78,
     volPoint: 0.5,
     volCoch: 0.4, cochVif: 1.1,
   },
 };
+// Règle d'or du tir : à force égale, il porte à la même distance que le
+// pointé. La portée d'un pointé vaut v·(vol + (1−vol)·mu)/(1−mu) (vol en
+// l'air, puis roulé) ; le tir vole jusqu'à cette distance moins sa glisse
+// d'atterrissage vTir·muTir/(1−muTir). tirAjust corrige ce que le seuil
+// d'arrêt et la quantification du vol enlèvent (mesuré par tests/tir.js).
+// Même formule partout : déterministe.
+for (const T of Object.values(TERRAINS)) {
+  const coef = (T.tirAjust * (T.volPoint + (1 - T.volPoint) * T.muRoll)) / (1 - T.muRoll);
+  const glisse = (T.vTir * T.muTir) / (1 - T.muTir);
+  T.airTir = p => Math.max(T.airMin, coef * T.vPoint(p) - glisse);
+}
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
 const departDe = T => ({ x: T.W / 2, y: T.L - 30 });
 
@@ -269,7 +276,9 @@ export function stepPhysics(bodies, T) {
             a.vx -= (imp / a.mass) * nx; a.vy -= (imp / a.mass) * ny;
             c.vx += (imp / c.mass) * nx; c.vy += (imp / c.mass) * ny;
             // une boule frappée fort dérape et s'arrête vite
-            for (const b of [a, c]) if (Math.hypot(b.vx, b.vy) > T.skidSeuil) b.mu = T.skidMu;
+            // Le dérapage post-impact est agressif : pour tout corps frappé
+            // fort, et toujours pour la boule tirée (le carreau reste sec)
+            for (const b of [a, c]) if (b.tir || Math.hypot(b.vx, b.vy) > T.skidSeuil) b.mu = T.skidMu;
             moving = true;
           }
         }
