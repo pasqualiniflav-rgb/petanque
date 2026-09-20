@@ -51,6 +51,13 @@ const cibleDe = st => (CIBLES.includes(st?.cible) ? st.cible : TARGET);
 const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le travail
 const TEMPS_LANCER = 20; // secondes par lancer
 const TEMPS_TOURNEE = 20; // secondes pour choisir à qui offrir la tournée
+const TEMPS_PAUSE = 120;  // au-delà, le joueur absent est remplacé par un bot
+const PAUSE_ALERTE = 30;  // décompte visible à partir de là
+// La pause n'existe QUE dans l'app : la version navigateur est une version
+// invité simplifiée. L'enveloppe applicative pose ce drapeau avant de
+// charger le jeu ; sans lui, pas de bouton — mais une pause déclenchée par
+// un joueur de l'app est honorée par tout le monde, invités compris.
+const estApp = () => typeof window !== "undefined" && window.PETANQUE_APP === true;
 
 // Chaque terrain porte sa géométrie et sa calibration physique.
 export const TERRAINS = {
@@ -108,6 +115,35 @@ for (const T of Object.values(TERRAINS)) {
 export function cleDuTour(st, turnId) {
   if (!st || st.phase !== "playing" || !st.mene) return "";
   return [st.mene.num, turnId || "-", st.mene.boules.length, st.mene.cochonnet ? 1 : 0].join("|");
+}
+
+// --- La pause, décisions pures -----------------------------------
+// La pause n'est permise que si la partie est EXPLICITEMENT privée et que
+// c'est au demandeur de jouer. Marqueur `privee` absent = refus.
+export function peutPauser(st, id) {
+  return !!st && st.privee === true && st.phase === "playing" && !st.pause
+    && !!id && nextToPlay(st) === id;
+}
+export function poserPause(st, id) {
+  if (!peutPauser(st, id)) return false;
+  st.pause = { par: id, tour: cleDuTour(st, id) };
+  return true;
+}
+export function leverPause(st, id) {
+  if (!st || !st.pause || st.pause.par !== id) return false;
+  st.pause = null;
+  return true;
+}
+// Expiration : le joueur absent passe la main à un bot. Il garde son nom et
+// ses boules, et `remplace` lui rendra sa place quand il rejoindra.
+export function expirerPause(st, niveau) {
+  if (!st || !st.pause) return false;
+  const id = st.pause.par;
+  const p = st.players.find(x => x.id === id);
+  if (p && !p.bot) { p.bot = true; p.niveau = niveau || "pointeur"; p.remplace = true; }
+  st.absents = st.absents || {}; st.absents[id] = 0;
+  st.pause = null;
+  return true;
 }
 
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
@@ -638,6 +674,12 @@ function normalize(st) {
   st.streak = st.streak || null;
   st.terrain = st.terrain || "classique";
   st.cible = CIBLES.includes(st.cible) ? st.cible : TARGET; // points pour gagner
+  // La pause n'est permise que si la partie est EXPLICITEMENT privée.
+  // Marqueur absent = pas de pause : un oubli ne peut pas ouvrir la porte.
+  st.privee = st.privee === true;
+  // { par: id du joueur, tour: clé du tour } — jamais d'horodatage : chaque
+  // appareil mesure la pause à sa propre horloge, comme il mesure le tour.
+  st.pause = st.pause && st.pause.par ? { par: st.pause.par, tour: st.pause.tour || "" } : null;
   if (st.mene) {
     st.mene.boules = st.mene.boules || [];
     st.mene.left = st.mene.left || {};
@@ -1589,6 +1631,8 @@ const ICONES = {
   partage: ["M12 15V4", "M8 8l4-4 4 4", "M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"],
   engrenage: [{ c: [12, 12, 3] }, "M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"],
   croix: ["M6 6l12 12", "M18 6 6 18"],
+  pause: [{ r: [7, 5, 3.4, 14, 1] }, { r: [13.6, 5, 3.4, 14, 1] }],
+  reprendre: ["M8 5v14l11-7z"],
   horloge: [{ c: [12, 13, 8] }, "M12 9v4l3 2", "M9 2h6"],
   robot: [{ r: [5, 8, 14, 11, 2] }, "M12 8V5", { c: [12, 4, 1] }, { p: [9.5, 13] }, { p: [14.5, 13] }, "M9 16.5h6", "M5 12H3", "M19 12h2"],
   oeil: [{ c: [12, 12, 3] }, "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"],
@@ -1984,9 +2028,29 @@ export default function Petanque() {
     tourDepuisRef.current = Date.now();
     pauseDepuisRef.current = null;
   }
+  // LA PAUSE. Elle vit dans l'état partagé, mais sans horodatage : chaque
+  // appareil la mesure à SA propre horloge, exactement comme il mesure le
+  // tour. Aucune comparaison d'horloges entre téléphones.
+  const enPause = !!(game && game.phase === "playing" && game.pause);
+  if (enPause && pauseDepuisRef.current === null) pauseDepuisRef.current = Date.now();
+  if (!enPause && pauseDepuisRef.current !== null) {
+    // Reprise : l'origine du tour avance de la durée que CET appareil a vue
+    // passer. Le décompte repart là où son écran l'avait laissé.
+    tourDepuisRef.current += Date.now() - pauseDepuisRef.current;
+    pauseDepuisRef.current = null;
+  }
+  const pauseEcoulee = enPause && pauseDepuisRef.current !== null
+    ? Math.floor((Date.now() - pauseDepuisRef.current) / 1000) : 0;
+  const pauseReste = Math.max(0, TEMPS_PAUSE - pauseEcoulee);
+  const pauseurId = enPause ? game.pause.par : null;
+  const pauseur = pauseurId ? game.players.find(p => p.id === pauseurId) : null;
+  // Le bouton n'existe que dans l'app, en partie privée, et pour le joueur
+  // dont c'est le tour. Tout le monde SUBIT la pause, y compris les invités.
+  const peutMettreEnPause = estApp() && !!game?.privee && myTurn && !enPause
+    && game?.phase === "playing" && !animating && !gel && !tourneeEnAttente;
   // Phase de visée : c'est mon tour et rien ne bouge. Déclaré ici, avant le
   // rendu du canvas qui s'en sert pour ancrer la caméra sur le cercle.
-  const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente;
+  const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente && !enPause;
   const cochToThrow = !!(game && game.phase === "playing" && game.mene && !game.mene.cochonnet);
   const ivresseNiveau = Math.min(6, (game && me && game.drinks && game.drinks[me.team]) || 0);
   const T = terrainDe(game);
@@ -2199,13 +2263,18 @@ export default function Petanque() {
     return () => clearInterval(t);
   }, [game?.phase, animating]);
 
-  const ecouleMs = game && game.phase === "playing" ? Date.now() - tourDepuisRef.current : 0;
+  // Pendant la pause, le temps écoulé est figé à l'instant où elle a commencé.
+  const ecouleMs = game && game.phase === "playing"
+    ? (enPause && pauseDepuisRef.current !== null
+        ? pauseDepuisRef.current - tourDepuisRef.current
+        : Date.now() - tourDepuisRef.current)
+    : 0;
   const resteTemps = Math.max(0, TEMPS_LANCER - Math.floor(ecouleMs / 1000));
 
   // Timer dépassé : le joueur lance au hasard tout seul ; si son appareil
   // est absent, un autre appareil exécute le lancer pour lui (4 s de grâce)
   useEffect(() => {
-    if (!game || game.phase !== "playing" || animating || gel || tourneeEnAttente || !turnId) return;
+    if (!game || game.phase !== "playing" || animating || gel || tourneeEnAttente || enPause || !turnId) return;
     const marque = turnId + ":" + (game.rev || 0);
     if (autoLancerRef.current === marque) return;
     const amax = terrainDe(game).angleMax;
@@ -2229,7 +2298,7 @@ export default function Petanque() {
   // grâce ; throwBoule revérifie l'état et s'efface si un lancer est déjà
   // annoncé, donc deux clients ne jouent jamais le même coup.
   useEffect(() => {
-    if (!game || animating || gel || tourneeEnAttente || !turnId) return;
+    if (!game || animating || gel || tourneeEnAttente || enPause || !turnId) return;
     if (!doitJouerPourLeBot(game, meId, ecouleMs)) return;
     const lui = game.players.find(p => p.id === turnId);
     const marque = turnId + ":" + (game.rev || 0);
@@ -2319,6 +2388,7 @@ export default function Petanque() {
         rev: 0, phase: "lobby", players: [], scores: { A: 0, B: 0, C: 0 },
         drinks: { A: 0, B: 0, C: 0 }, terrain: "classique",
         boulesEach: 3, cible: TARGET, sansTournee: true, sansCris: true,
+        privee: true, pause: null, // partie créée par partage de lien = privée
         mene: null, winner: null, lastResult: null,
       });
     }
@@ -2395,6 +2465,30 @@ export default function Petanque() {
   });
 
   const laisserJoueur = id => mutate(g => { g.absents = g.absents || {}; g.absents[id] = 0; });
+
+  // --- la pause ---------------------------------------------------
+  // Le garde-fou est dans l'ÉCRITURE, pas seulement sur le bouton : mutate
+  // relit le dernier état avant d'écrire, donc deux appareils ne peuvent ni
+  // se doubler ni contourner la règle en fabriquant un clic.
+  const mettreEnPause = () => mutate(g => { poserPause(g, meId); });
+  const reprendre = () => mutate(g => { leverPause(g, meId); });
+  // Expiration : au bout de deux minutes, le joueur absent passe la main à
+  // un bot. Il garde son nom et ses boules, et reprendra sa place en
+  // rejoignant — c'est exactement le chemin d'un joueur déconnecté.
+  const pauseExpireeRef = useRef("");
+  useEffect(() => {
+    if (!enPause || pauseReste > 0) return;
+    // l'appareil meneur d'abord ; n'importe quel autre 5 s plus tard, au cas
+    // où le meneur serait justement celui qui est parti
+    if (!isHost && pauseEcoulee < TEMPS_PAUSE + 5) return;
+    const marque = pauseurId + ":" + (game.pause.tour || "");
+    if (pauseExpireeRef.current === marque) return;
+    pauseExpireeRef.current = marque;
+    mutate(g => {
+      if (!g.pause || g.pause.par !== pauseurId) return;
+      expirerPause(g, niveauBot);
+    });
+  });
 
   // ... et s'il revient, il récupère ses boules
   const reprendreMain = () => mutate(g => {
@@ -2725,6 +2819,11 @@ export default function Petanque() {
             </button>
           );
         })()}
+        {enPartie && peutMettreEnPause && (
+          <button className={cl} aria-label="Mettre en pause" title="Mettre en pause" onClick={mettreEnPause}>
+            <Ico nom="pause" taille={t} />
+          </button>
+        )}
         <button className={cl} aria-label="Cigales" title="Cigales" onClick={basculerCigales}><Ico nom={cigales ? "son" : "muet"} taille={t} /></button>
         <button className={cl + (ambiance ? "" : " off")} aria-label="Musique" title="Musique" onClick={basculerAmbiance}><Ico nom="note" taille={t} /></button>
         <button className={cl} aria-label="Aide" title="Aide" onClick={() => setAide(true)}>?</button>
@@ -3054,6 +3153,29 @@ export default function Petanque() {
   );
   const surimpressions = (
     <>
+      {enPause && (
+        <div style={S.voilePause}>
+          <div style={S.plaquePause}>
+            <div style={S.pauseTitre}>PARTIE EN PAUSE</div>
+            <div style={S.pauseSous}>
+              {pauseur ? `${pauseur.name} a demandé une pause.` : "Une pause est en cours."}
+            </div>
+            {pauseReste <= PAUSE_ALERTE && (
+              <div style={S.pauseCompte}>
+                Reprise automatique par un bot dans{" "}
+                <span className="chronoRouge">{pauseReste}</span> s
+              </div>
+            )}
+            {pauseurId === meId ? (
+              <button className="bp" style={{ minHeight: 44 }} onClick={reprendre}>
+                <Ico nom="reprendre" taille={16} /> REPRENDRE
+              </button>
+            ) : (
+              <div style={S.pauseSous}>On attend {pauseur ? pauseur.name : "le joueur"}…</div>
+            )}
+          </div>
+        </div>
+      )}
       {texteArdoise && <div style={S.motTerrain}>{texteArdoise}</div>}
       {cri && <div style={S.criPlaque}><span style={S.criTexte}>{cri}</span></div>}
       {!me && game.phase !== "finished" && plaqueInfo(
@@ -3270,6 +3392,20 @@ const styles = {
     fontSize: 12, fontWeight: 600, letterSpacing: 0.5,
     padding: "6px 10px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
+  // La pause : un voile sur le seul terrain, et la plaque émaillée de la charte
+  voilePause: {
+    position: "absolute", inset: 0, zIndex: 7, background: "rgba(16, 20, 11, 0.55)",
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 20, boxSizing: "border-box",
+  },
+  plaquePause: {
+    width: "100%", maxWidth: 300, boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `3px solid ${NUIT}`, borderRadius: 8,
+    boxShadow: `0 5px 0 rgba(0, 0, 0, 0.45), inset 0 0 0 4px ${CREME}, inset 0 0 0 6px ${NUIT}`,
+    padding: "20px 18px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center",
+  },
+  pauseTitre: { fontFamily: "'Alfa Slab One', serif", fontSize: 21, lineHeight: 1.1, color: NUIT, fontWeight: 400 },
+  pauseSous: { fontSize: 13, fontWeight: 500, letterSpacing: 0.5, color: NUIT },
+  pauseCompte: { fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: NUIT },
   // Le cri du Sud : plaque posée sur le terrain, le temps de le dire
   criPlaque: {
     position: "absolute", left: 16, right: 16, top: "42%", zIndex: 4, boxSizing: "border-box",

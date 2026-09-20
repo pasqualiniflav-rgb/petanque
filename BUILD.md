@@ -42,6 +42,15 @@ tournée proposée, réglage changé) ne remet pas le chronomètre à zéro.
 npx esbuild tests/chrono.js --bundle --platform=node --alias:react=./tests/react-vide.js --outfile=/tmp/chrono.cjs && node /tmp/chrono.cjs
 ```
 
+`tests/pause.js` vérifie la pause partagée : polarité (privée seulement,
+marqueur oublié = refus), droit du seul joueur au tour, absence de tout
+horodatage dans l'état écrit, reprise réservée au demandeur, et bascule
+sur un bot à l'expiration.
+
+```bash
+npx esbuild tests/pause.js --bundle --platform=node --alias:react=./tests/react-vide.js --outfile=/tmp/pause.cjs && node /tmp/pause.cjs
+```
+
 `tests/bots.js` vérifie la règle « qui joue pour un bot » (hôte présent,
 hôte disparu, bot arrivé en cours de partie, joueur remplacé, hôte remplacé,
 lancer déjà annoncé) et que le cerveau accepte un joueur remplacé.

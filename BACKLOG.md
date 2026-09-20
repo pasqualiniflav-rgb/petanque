@@ -233,6 +233,27 @@ Corrigé par une clé d'identité du tour, `cleDuTour(st, turnId)` : mène, joue
 
 La seule remontée observée est à +7,5 s : le chronomètre est arrivé à zéro et la boule est partie toute seule, c'est-à-dire un vrai tour suivant.
 
+## ⏸ Lot 0 bis — la pause partagée
+
+Elle entre dans l'état de partie — geler sa propre horloge ne gèle que son écran — **mais sans horodatage** : chaque appareil la mesure à sa propre horloge, exactement comme il mesure le tour. Aucune comparaison d'horloges entre téléphones. À la reprise, chacun avance son origine de tour de la durée qu'il a lui-même vue passer.
+
+Deux décisions de Flavio appliquées : expiration à **2 minutes**, décompte visible à **30 s** ; et polarité **inversée** — la pause est permise uniquement si `privee === true`, donc un marqueur oublié l'interdit.
+
+| Ce qui doit être prouvé | Preuve | Résultat |
+|---|---|---|
+| Jamais de pause hors partie privée | `tests/pause.js` | `privee: false` refusée, **marqueur absent refusée**, marqueur mal typé refusé ✅ |
+| Seul le joueur dont c'est le tour | idem, et l'écriture elle-même est gardée | refusée pour l'autre joueur, et `poserPause` n'écrit pas ✅ |
+| Aucun horodatage dans l'état partagé | inspection de l'objet écrit | `{ par, tour }` seulement, aucune valeur d'horloge ✅ |
+| Reprise réservée à celui qui a mis en pause | `tests/pause.js` | un autre joueur ne peut pas reprendre ✅ |
+| Pause et reprise ne touchent ni score ni mène | idem | état identique avant/après ✅ |
+| La pause ne s'affiche pas en version navigateur | relevé des boutons, sans le drapeau app | bouton absent ✅ |
+| ... et s'affiche dans l'app | drapeau posé, relevé des boutons | bouton présent, pour le joueur au tour ✅ |
+| Le chrono se fige | relevé à la seconde | avant 6 5 4 · **pause 3 3 3 3 3 3** ✅ |
+| ... et repart où il s'était arrêté | relevé après reprise | reprise à 3, puis 1 — pas de retour à 20 ✅ |
+| La pause expire et bascule sur un bot | pause réelle chronométrée, puis état Firebase relu | décompte à 95 s : 24 19 14 9 4, levée à 120 s ; `bot: true, remplace: true`, nom et 3 boules conservés ✅ |
+
+Le joueur remplacé récupère sa place par le chemin déjà en place — « JE REPRENDS » s'affiche, et rejoindre par son prénom le dé-robotise.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
