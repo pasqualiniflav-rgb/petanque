@@ -18,7 +18,10 @@ const HAUT_VUE = 28;
 // sur les côtés. Les coordonnées physiques, elles, ne bougent jamais.
 let VIEW_W = 340 + 2 * HORS_G;              // fenêtre de jeu : le terrain classique et ses bandes, au minimum
 const VIEW_H = 520 + HAUT_VUE + HORS_B;
-const SKY_H = 84;                  // bande de décor au-dessus du terrain
+// Bande de décor FIXE au-dessus du terrain : village, sol de la place, et la
+// bande de sable hors-jeu où se plantent les poteaux du panneau. Elle ne
+// défile jamais — la fenêtre caméra glisse dessous (maquette-terrain-long).
+const SKY_H = 112;
 const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
 export function reglerLargeurVue(w) {
@@ -53,10 +56,11 @@ export const TERRAINS = {
     camera: false, subSteps: 2, stopSeuil: 0.2,
     muRoll: 0.9687, angleMax: 25,
     vPoint: p => (2.9 + (p / 100) * 4.6) * 2.2,
-    // Atterrissage à vide : la boule tirée glisse puis roule ~75 px
-    // (muTir), voir airTir plus bas. Dérapage après un choc : la frappée
-    // part sec et meurt vite, la frappante meurt quasi sur place (skidMu).
-    vTir: 18.7, muTir: 0.8, airMin: 40, tirAjust: 0.965,
+    // Atterrissage : la boule mord le sable (muChute) tant qu'elle file, puis
+    // ROULE (muRoll) sous vRoule — deux régimes distincts, voir stepPhysics.
+    // Le dérapage après un choc (skidMu) est un troisième régime, sans sortie
+    // en roulé : la frappante meurt sur place, le carreau reste sec.
+    vTir: 18.7, muChute: 0.8, vRoule: 0.55, airMin: 40, tirAjust: 0.965,
     cochMin: 170, skidSeuil: 8.8, skidMu: 0.8,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
     // Cochonnet : plus léger, il part en cloche plus courte et va un peu
@@ -68,7 +72,7 @@ export const TERRAINS = {
     camera: true, subSteps: 12, stopSeuil: 0.34,
     muRoll: 0.9582, angleMax: 8,
     vPoint: p => (12 + (p / 100) * 58) * 1.7,
-    vTir: 37.4, muTir: 0.832, airMin: 100, tirAjust: 0.985, // glisse ~185 px
+    vTir: 37.4, muChute: 0.832, vRoule: 0.9, airMin: 100, tirAjust: 0.985,
     cochMin: 1400, skidSeuil: 20.4, skidMu: 0.78,
     volPoint: 0.5,
     volCoch: 0.4, cochVif: 1.1,
@@ -82,7 +86,10 @@ export const TERRAINS = {
 // Même formule partout : déterministe.
 for (const T of Object.values(TERRAINS)) {
   const coef = (T.tirAjust * (T.volPoint + (1 - T.volPoint) * T.muRoll)) / (1 - T.muRoll);
-  const glisse = (T.vTir * T.muTir) / (1 - T.muTir);
+  // Glisse = morsure (jusqu'à vRoule) + roulé final. airTir s'y ajuste pour
+  // que le tir porte toujours comme le pointé.
+  const glisse = (T.muChute * (T.vTir - T.vRoule)) / (1 - T.muChute)
+               + (T.vRoule * T.muRoll) / (1 - T.muRoll);
   T.airTir = p => Math.max(T.airMin, coef * T.vPoint(p) - glisse);
 }
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
@@ -209,8 +216,10 @@ export function corpsLance(T, genre, puissance, rad, sup) {
   const DEP = departDe(T);
   const dx = Math.sin(rad), dy = -Math.cos(rad);
   if (genre === "tir") {
+    // Pas de mu figé : le frottement de la boule tirée dépend de son régime
+    // (voir stepPhysics). b.mu n'est posé que par un choc — et il colle alors.
     return { x: DEP.x, y: DEP.y, r: R_BOULE, mass: 1, kind: "boule", tir: true,
-             mu: T.muTir, air: T.airTir(puissance), vx: dx * T.vTir, vy: dy * T.vTir, ...sup };
+             air: T.airTir(puissance), vx: dx * T.vTir, vy: dy * T.vTir, ...sup };
   }
   const coch = genre === "coch";
   const v0 = T.vPoint(puissance) * (coch ? T.cochVif : 1);
@@ -288,7 +297,10 @@ export function stepPhysics(bodies, T) {
   }
   for (const b of bodies) {
     if (b.air <= 0 || b.air === undefined) {
-      const mu = b.mu || T.muRoll;
+      // b.mu posé par un choc = dérapage, il colle jusqu'à l'arrêt (carreau sec).
+      // Sinon la boule tirée mord à l'atterrissage puis passe au roulé.
+      const mu = b.mu
+        || (b.tir && Math.hypot(b.vx, b.vy) > T.vRoule ? T.muChute : T.muRoll);
       b.vx *= mu; b.vy *= mu;
     }
     if (Math.hypot(b.vx, b.vy) < T.stopSeuil) { b.vx = 0; b.vy = 0; } else moving = true;
@@ -682,7 +694,7 @@ function dessinerDecorStylise(cx, W, H) {
   cx.fillStyle = ciel; cx.fillRect(0, 0, W, H);
 
   // soleil bas et son halo
-  const sx = W * 0.8, sy = H * 0.42;
+  const sx = W * 0.8, sy = H * 0.34;
   const halo = cx.createRadialGradient(sx, sy, 1, sx, sy, H * 1.1);
   halo.addColorStop(0, "rgba(255,247,209,0.95)");
   halo.addColorStop(0.16, "rgba(255,227,152,0.45)");
@@ -702,15 +714,15 @@ function dessinerDecorStylise(cx, W, H) {
     cx.lineTo(W, H); cx.closePath(); cx.fill();
   };
   colline(H * 0.5, 0.6, "#8fa9b2");
-  colline(H * 0.58, 2.1, "#6b8a7e");
+  colline(H * 0.57, 2.1, "#6b8a7e");
 
   // rangée de façades et toits de tuiles
-  const solVillage = H * 0.79;
+  const solVillage = H * 0.76;
   const facades = ["#e6cfa4", "#d9b98b", "#cfa878", "#e9d9b6", "#c99a6c"];
   let x = -16, k = 0;
   while (x < W + 12) {
     const w = 24 + Math.floor(rnd() * 24);
-    const h = 13 + Math.floor(rnd() * 16);
+    const h = 10 + Math.floor(rnd() * 12);
     const y = solVillage - h;
     cx.fillStyle = facades[k++ % facades.length];
     cx.fillRect(x, y, w, h);
@@ -728,11 +740,15 @@ function dessinerDecorStylise(cx, W, H) {
     x += w + 2;
   }
 
-  // sol de la place
-  const sol = cx.createLinearGradient(0, solVillage - 2, 0, H);
+  // sol de la place, puis la bande de sable hors-jeu où se plantent les
+  // poteaux du panneau de score
+  const basPlace = H - 20;
+  const sol = cx.createLinearGradient(0, solVillage - 2, 0, basPlace);
   sol.addColorStop(0, "#c9ab77");
   sol.addColorStop(1, "#ac8b5c");
-  cx.fillStyle = sol; cx.fillRect(0, solVillage - 1, W, H - solVillage + 1);
+  cx.fillStyle = sol; cx.fillRect(0, solVillage - 1, W, basPlace - solVillage + 1);
+  cx.fillStyle = "#d8c49a"; cx.fillRect(0, basPlace, W, H - basPlace);
+  cx.fillStyle = "#c9b183"; cx.fillRect(0, basPlace, W, 4);
 
   // platanes : ombre au sol, tronc tacheté, puis couronne de feuillage
   const troncs = [W * 0.04, W * 0.24, W * 0.46, W * 0.68, W * 0.9];
@@ -768,9 +784,9 @@ function dessinerDecorStylise(cx, W, H) {
     }
   };
   for (const tx of troncs) {
-    couronne(tx, H * 0.17, 20, "#39592b", 14);
-    couronne(tx - 3, H * 0.13, 17, "#4f7433", 12);
-    couronne(tx + 4, H * 0.09, 13, "#77a044", 9); // touches de soleil sur le dessus
+    couronne(tx, H * 0.19, 17, "#39592b", 14);
+    couronne(tx - 3, H * 0.15, 14, "#4f7433", 12);
+    couronne(tx + 4, H * 0.11, 11, "#77a044", 9); // touches de soleil sur le dessus
   }
 }
 
@@ -1283,7 +1299,9 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
       if (sp > vmax) { vmax = sp; cible = b; }
     }
     const coch = list.find(b => b.kind === "coch" && !b.dead);
-    const foc = cible || coch || { x: T.W / 2, y: T.L * 0.45 };
+    // Pendant la visée, on regarde d'où l'on joue : le cercle de lancer, comme
+    // au vrai boulodrome. Dès que la boule part, la caméra la suit.
+    const foc = cible || (aim ? departDe(T) : null) || coch || { x: T.W / 2, y: T.L * 0.45 };
     cam = { // la fenêtre peut montrer les bandes hors-jeu
       x: Math.max(VIEW_W / 2 - HORS_G, Math.min(T.W + HORS_G - VIEW_W / 2, foc.x)),
       y: Math.max(VIEW_H / 2 - HAUT_VUE, Math.min(T.L + HORS_B - VIEW_H / 2, foc.y)),
@@ -1415,7 +1433,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   // Repère de visée, en coordonnées écran, ancré en bas au centre là où le
   // joueur se tient : une courte ligne pointillée à faible opacité, qui
   // s'estompe à mesure que le geste s'allonge. La direction se devine.
-  if (aim) {
+  if (aim && aim.trace) {
     const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - HORS_B - 30;
     const rad = (aim.angle * Math.PI) / 180;
     const len = 52;
@@ -1476,6 +1494,8 @@ const CSS_BASE = `
 .bi.g{width:46px;height:46px;font-size:20px}
 .bi.p{width:36px;height:36px;font-size:16px}
 .bi.off svg{opacity:.35}
+.bi.eteint{background:#ddd6c1;border-color:#8a8f96;box-shadow:0 3px 0 rgba(138,143,150,.5);cursor:default}
+.bi.eteint:active{transform:none;box-shadow:0 3px 0 rgba(138,143,150,.5)}
 .bp:active,.bs:active,.bi:active{transform:translateY(3px);box-shadow:none}
 .bp:disabled,.bs:disabled{opacity:.45;cursor:default}
 .bp:disabled:active,.bs:disabled:active{transform:none;box-shadow:0 3px 0 ${NUIT}}
@@ -1867,6 +1887,9 @@ export default function Petanque() {
   const isHost = !!meneur && meneur.id === meId;
   const turnId = game && game.phase === "playing" ? nextToPlay(game) : null;
   const myTurn = turnId !== null && turnId === meId && !me?.bot;
+  // Phase de visée : c'est mon tour et rien ne bouge. Déclaré ici, avant le
+  // rendu du canvas qui s'en sert pour ancrer la caméra sur le cercle.
+  const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente;
   const cochToThrow = !!(game && game.phase === "playing" && game.mene && !game.mene.cochonnet);
   const ivresseNiveau = Math.min(6, (game && me && game.drinks && game.drinks[me.team]) || 0);
   const T = terrainDe(game);
@@ -2161,10 +2184,13 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75 }
-      : (myTurn && !gel && curseurs ? { angle, progression: 0 } : null);
+    // `aim` couvre toute la phase de visée (c'est lui qui ancre la caméra sur
+    // le cercle de lancer) ; `trace` dit s'il y a une direction à dessiner.
+    const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75, trace: true }
+      : peutLancer ? { angle, progression: 0, trace: curseurs }
+      : null;
     drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue]);
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue, peutLancer]);
 
   // --- entrée -----------------------------------------------------
   async function join(codeForce) {
@@ -2481,8 +2507,6 @@ export default function Petanque() {
   // L'angle du glissé donne la direction, sa longueur la force. Le geste
   // ne produit qu'un couple (angle, force) remis à throwBoule : la chaîne
   // déterministe qui suit est la même qu'avec les curseurs.
-  const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente;
-
   const basculerCurseurs = v => {
     setCurseurs(v);
     try { localStorage.setItem("petanque.curseurs", v ? "1" : "0"); } catch {}
@@ -2570,10 +2594,18 @@ export default function Petanque() {
     const t = grand ? 22 : enPartie ? 18 : 20;
     return (
       <div style={S.outils}>
-        {enPartie && game?.replay && !animating && !gel && (
-          <button className={cl} aria-label="Revoir le coup" title="Revoir le coup"
-                  onClick={() => lancerAnimationReplay(game, "Replay du dernier coup…")}><Ico nom="rejouer" taille={t} /></button>
-        )}
+        {/* Toujours présent, grisé quand il n'y a rien à revoir : la barre ne
+            bouge pas d'un pixel d'un coup à l'autre */}
+        {enPartie && (() => {
+          const peutRevoir = !!game?.replay && !animating && !gel;
+          return (
+            <button className={cl + (peutRevoir ? "" : " eteint")} aria-label="Revoir le coup" title="Revoir le coup"
+                    disabled={!peutRevoir}
+                    onClick={() => peutRevoir && lancerAnimationReplay(game, "Replay du dernier coup…")}>
+              <Ico nom="rejouer" taille={t} couleur={peutRevoir ? NUIT : "#8a8f96"} />
+            </button>
+          );
+        })()}
         <button className={cl} aria-label="Cigales" title="Cigales" onClick={basculerCigales}><Ico nom={cigales ? "son" : "muet"} taille={t} /></button>
         <button className={cl + (ambiance ? "" : " off")} aria-label="Musique" title="Musique" onClick={basculerAmbiance}><Ico nom="note" taille={t} /></button>
         <button className={cl} aria-label="Aide" title="Aide" onClick={() => setAide(true)}>?</button>
@@ -2785,15 +2817,19 @@ export default function Petanque() {
   // sa place) : 76 px, poteaux à 28 % et 72 % de sa largeur, pieds posés
   // 6 px au-dessus de la ligne du fond — jamais dans l'aire de jeu.
   const hautPlaque = 6;
-  const ligneFond = Math.round((SKY_H + HAUT_VUE) * echelleVue);
-  const pieds = Math.max(hautPlaque + 76 + 4, ligneFond - 6);
-  const hautPoteaux = hautPlaque + 36;
+  // Les pieds se posent dans la bande de sable au bas du décor — une bande
+  // FIXE : le sol ne défile jamais sous le panneau, même caméra en marche
+  const basBandeFixe = Math.round(SKY_H * echelleVue);
+  const basPlaque = hautPlaque + 76;
+  const pieds = Math.max(basPlaque + 28, basBandeFixe - 6);
+  const hautPoteaux = basPlaque - 6;
   const largeurPlaque = largeurBoite - 28;
   const fronton = (
     <>
-      <div style={{ ...S.plaqueOmbre, top: pieds - 5 }} />
-      <div style={{ ...S.poteau, left: 14 + 0.28 * largeurPlaque - 4.5, top: hautPoteaux, height: pieds - hautPoteaux }} />
-      <div style={{ ...S.poteau, left: 14 + 0.72 * largeurPlaque - 4.5, top: hautPoteaux, height: pieds - hautPoteaux }} />
+      <div style={{ ...S.plaqueOmbre, top: pieds - 2, left: 14 + 0.28 * largeurPlaque - 42, width: 84 }} />
+      <div style={{ ...S.plaqueOmbre, top: pieds - 2, left: 14 + 0.72 * largeurPlaque - 42, width: 84 }} />
+      <div style={{ ...S.poteau, left: 14 + 0.28 * largeurPlaque - 5, top: hautPoteaux, height: pieds - hautPoteaux }} />
+      <div style={{ ...S.poteau, left: 14 + 0.72 * largeurPlaque - 5, top: hautPoteaux, height: pieds - hautPoteaux }} />
       <div style={{ ...S.plaqueBois, top: hautPlaque }}>
         {equipes.map(rail)}
         {trois ? (
@@ -2824,7 +2860,7 @@ export default function Petanque() {
   );
   const surimpressions = (
     <>
-      {texteArdoise && <div style={S.ardoiseFlottante}>{texteArdoise}</div>}
+      {texteArdoise && <div style={S.ardoiseBandeau}>{texteArdoise}</div>}
       {cri && <div style={S.criPlaque}><span style={S.criTexte}>{cri}</span></div>}
       {!me && game.phase !== "finished" && plaqueInfo(
         <><Ico nom="oeil" taille={16} /> Tu regardes la partie.</>,
@@ -2894,11 +2930,19 @@ export default function Petanque() {
             {fronton}
             {surimpressions}
           </div>
-          <div style={{ ...S.commandes, height: curseurs ? 150 : 46 }}>
+          <div style={{ ...S.commandes, height: curseurs ? 156 : 52 }}>
+            {/* Rangée de 52 px, boutons de 44 px (maquette-jeu.html). Pendant la
+                phase du cochonnet, un seul bouton à la place de la paire. */}
             <div style={S.rangee}>
-              <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 16, padding: "6px 8px", minHeight: 44 }} onClick={() => setMode("point")}>POINTER</button>
-              <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer || cochToThrow} style={{ flex: 1, letterSpacing: 2, fontSize: 16, padding: "6px 8px", minHeight: 44 }} onClick={() => setMode("tir")}>TIRER</button>
-              <button className="bs" style={{ width: 50, padding: 0, minHeight: 44 }} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" /></button>
+              {cochToThrow ? (
+                <button className="bp" disabled={!peutLancer} style={S.boutonJeu} onClick={() => curseurs && throwBoule()}>LANCER LE COCHONNET</button>
+              ) : (
+                <>
+                  <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("point")}>POINTER</button>
+                  <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("tir")}>TIRER</button>
+                </>
+              )}
+              <button className="bs" style={S.boutonOptions} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" taille={19} /></button>
             </div>
             {curseurs && (
               <div style={S.plaqueCurseurs}>
@@ -2910,9 +2954,11 @@ export default function Petanque() {
                   <span style={S.etiquetteCurseur}>{!cochToThrow && mode === "tir" ? "DISTANCE" : "FORCE"}</span>
                   <input type="range" min={25} max={100} value={power} disabled={!peutLancer} onChange={e => setPower(+e.target.value)} />
                 </div>
-                <button className="bp" disabled={!peutLancer} style={{ width: "100%", minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
-                  {cochToThrow ? "LANCER LE COCHONNET" : mode === "tir" ? "TIRER !" : "LANCER"}
-                </button>
+                {!cochToThrow && (
+                  <button className="bp" disabled={!peutLancer} style={{ width: "100%", minHeight: 44, padding: "8px 10px" }} onClick={() => throwBoule()}>
+                    {mode === "tir" ? "TIRER !" : "LANCER"}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2999,11 +3045,12 @@ const styles = {
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
     padding: "7px 12px", textAlign: "center", borderRadius: 4, boxSizing: "border-box",
   },
-  // Ardoise posée sous le fronton (messages passagers) : ne bouge rien
-  ardoiseFlottante: {
-    position: "absolute", left: 6, right: 6, top: 62, zIndex: 3,
+  // Bandeau d'information de la charte : bande ardoise opaque, pleine largeur,
+  // collée au bas du terrain — jamais flottante au milieu, jamais sur le panneau
+  ardoiseBandeau: {
+    position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 4,
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
-    padding: "5px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+    padding: "6px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
   // Le cri du Sud : plaque posée sur le terrain, le temps de le dire
   criPlaque: {
@@ -3029,7 +3076,11 @@ const styles = {
     display: "block", width: "100%", height: "100%", objectFit: "contain", objectPosition: "50% 100%",
     touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
-  commandes: { display: "flex", flexDirection: "column", gap: 6, padding: "0 6px", boxSizing: "border-box", flexShrink: 0 },
+  // Rangée de commandes : 52 px de haut, aucun padding vertical — le terrain
+  // descend jusqu'à elle (cotes de maquette-jeu.html)
+  commandes: { display: "flex", flexDirection: "column", gap: 4, padding: "0 6px", boxSizing: "border-box", flexShrink: 0, justifyContent: "center" },
+  boutonJeu: { flex: 1, height: 44, minHeight: 44, padding: "0 8px", fontSize: 15, letterSpacing: 2 },
+  boutonOptions: { width: 44, height: 44, minHeight: 44, padding: 0, flexShrink: 0 },
   plaqueCurseurs: {
     background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
     boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", padding: "4px 8px 6px", display: "flex", flexDirection: "column", gap: 2,
@@ -3045,10 +3096,12 @@ const styles = {
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
     color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
   },
-  poteau: { position: "absolute", width: 9, zIndex: 2, background: "linear-gradient(90deg, #9a7a4e, #7a5c38)", borderRadius: 2 },
+  // Bois foncé contrasté, épaisseur 10 px (maquette-terrain-long.html)
+  poteau: { position: "absolute", width: 10, zIndex: 2, background: "linear-gradient(90deg, #8a6540, #6b4e30)", borderRadius: 2 },
+  // Ombre de la charte : dure et courte, pas de halo diffus
   plaqueOmbre: {
-    position: "absolute", left: "22%", width: "56%", height: 12, zIndex: 2,
-    background: "radial-gradient(closest-side, rgba(70, 55, 30, 0.3), rgba(70, 55, 30, 0))", transform: "skewX(-18deg)",
+    position: "absolute", left: "24%", width: "52%", height: 6, zIndex: 2, borderRadius: 3,
+    background: "rgba(70, 55, 30, 0.28)",
   },
   rail: {
     position: "absolute", left: 10, right: 10, borderTop: "2px solid #7a5a35", borderBottom: "2px solid #7a5a35",
