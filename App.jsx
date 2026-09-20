@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FIGURES, ORDRE_FIGURES, COUVRE_CHEFS, ORDRE_CHEFS, POLOS, ORDRE_POLOS, Portrait, figureValide } from "./figures.jsx";
+import { CHARTES, ORDRE_CHARTES, charteDe } from "./chartes.js";
+import { dessinerVueJoueur } from "./vuejoueur.js";
 
 // ------------------------------------------------------------------
 // Pétanque en ligne — jusqu'à 9 joueurs (3 équipes), temps réel.
@@ -1627,7 +1629,8 @@ const CSS_BASE = `
 .bp,.bs,.bi{font-family:'Oswald',sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;box-sizing:border-box}
 .bp{background:${PASTIS};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 ${NUIT};padding:13px 10px;font-size:17px;font-weight:700;letter-spacing:1.5px;color:${NUIT};min-height:48px}
 .bs{background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(29,58,79,.6);padding:11px 10px;font-size:15px;font-weight:600;letter-spacing:1.5px;color:${NUIT};display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px}
-.bs.petit{padding:6px 10px;font-size:12px;letter-spacing:1px;min-height:36px;gap:6px;white-space:nowrap}
+.bs.petit{padding:6px 10px;font-size:12px;letter-spacing:1px;min-height:36px;gap:6px;white-space:nowrap;position:relative}
+.bs.petit::after{content:'';position:absolute;inset:-6px 0}/* 36 + 2x4 = 44 px de tap */
 .bs.creux{background:transparent}
 .bi{width:40px;height:40px;background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;color:${NUIT};font-size:18px;font-weight:700}
 .bi.g{width:46px;height:46px;font-size:20px}
@@ -1928,6 +1931,23 @@ export default function Petanque() {
   // les valeurs par défaut suffisent à lancer une partie sans jamais l'ouvrir.
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
   const [galerie, setGalerie] = useState(false); // choix de la figure
+  const vueRef = useRef("dessus");
+  const charteRef = useRef("actuelle");
+  // Les deux réglages du lot 2. Personnels, conservés entre les parties, et
+  // changeables EN COURS DE PARTIE : c'est tout l'intérêt de la comparaison.
+  // Ils ne touchent pas à l'état partagé — ce sont deux façons de dessiner
+  // le même état, pas deux états.
+  const [vue, setVue] = useState(() => {
+    try { return localStorage.getItem("petanque.vue") === "joueur" ? "joueur" : "dessus"; } catch { return "dessus"; }
+  });
+  const [charte, setCharte] = useState(() => {
+    try { return localStorage.getItem("petanque.charte") === "ivoire" ? "ivoire" : "actuelle"; } catch { return "actuelle"; }
+  });
+  const choisirVue = v => { setVue(v); try { localStorage.setItem("petanque.vue", v); } catch {} };
+  const choisirCharte = c => { setCharte(c); try { localStorage.setItem("petanque.charte", c); } catch {} };
+  const [options, setOptions] = useState(false);
+  const CH = charteDe(charte);
+  vueRef.current = vue; charteRef.current = charte;
   // Le compteur : bandeau replié en jeu, plaque complète en surimpression.
   // `plaque` vaut null, "score" (ouverture automatique 2 s en fin de mène)
   // ou "clic" (le joueur l'a ouverte, elle reste jusqu'à ce qu'il la ferme).
@@ -2244,7 +2264,15 @@ export default function Petanque() {
       try {
         const moving = stepPhysics(bodies, Tg);
         marquerTraces(bodies, Tg, marquer);
-        drawField(ctx, g, bodies, null, ivresse, Tg);
+        if (vueRef.current === "joueur") {
+          const lui = g.players.find(p => p.id === nextToPlay(g));
+          dessinerVueJoueur(ctx, g, bodies, null, Tg, {
+            largeur: largeurVue, hauteur: VIEW_H, charte: charteRef.current, depart: departDe(Tg),
+            couleurs: TEAM_COLORS, figures: { lanceur: lui && lui.fig ? { ...lui.fig, team: lui.team } : null },
+          });
+        } else {
+          drawField(ctx, g, bodies, null, ivresse, Tg);
+        }
         frames++;
         if (moving && frames < 1200) requestAnimationFrame(loop);
         else finir();
@@ -2405,8 +2433,18 @@ export default function Petanque() {
     const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75, trace: true }
       : peutLancer ? { angle, progression: 0, trace: true }
       : null;
-    drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
-  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue, peutLancer]);
+    const ctx2 = cv.getContext("2d");
+    if (vue === "joueur") {
+      const lanceur = turnPlayer && turnPlayer.fig
+        ? { ...turnPlayer.fig, team: turnPlayer.team } : null;
+      dessinerVueJoueur(ctx2, game, gel ? gel.bodies : makeBodies(game), visee, T, {
+        largeur: largeurVue, hauteur: VIEW_H, charte, depart: departDe(T),
+        couleurs: TEAM_COLORS, figures: { lanceur },
+      });
+    } else {
+      drawField(ctx2, game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
+    }
+  }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue, peutLancer, vue, charte]);
 
   // Fin de mène : la plaque complète s'ouvre deux secondes, le jeton grimpe
   // jusqu'à son nouveau cran, puis elle se referme. Même composant que le
@@ -2885,7 +2923,7 @@ export default function Petanque() {
     const cl = "bi" + (grand ? " g" : enPartie ? " p" : "");
     const t = grand ? 22 : enPartie ? 18 : 20;
     return (
-      <div style={enPartie ? S.outilsPartie : S.outils}>
+      <div style={enPartie ? { ...S.outilsPartie, background: CH.barre } : S.outils}>
         {/* Toujours présent, grisé quand il n'y a rien à revoir : la barre ne
             bouge pas d'un pixel d'un coup à l'autre */}
         {enPartie && (() => {
@@ -3338,10 +3376,36 @@ export default function Petanque() {
   );
 
   return (
-    <div style={S.pageGame}>
+    <div style={{ ...S.pageGame, background: CH.fond }}>
       <style>{CSS_BASE}{CSS_IVRESSE}</style>
       {aide && <PanneauAide fermer={() => setAide(false)} revoirGeste={() => { setAide(false); setTuto(true); }} />}
       {tuto && !aide && <Didacticiel fermer={fermerTuto} />}
+      {options && (
+        <div style={S.voile} onClick={e => e.target === e.currentTarget && setOptions(false)}>
+          <div style={{ ...S.plaquePopin, alignItems: "stretch", textAlign: "left", gap: 10 }}>
+            <div style={{ ...S.popinTitre, textAlign: "center" }}>OPTIONS</div>
+            <label style={S.etiquette}>LANCER</label>
+            <div style={S.rangee}>
+              <button className={!curseurs ? "bp" : "bs"} style={S.segment} onClick={() => basculerCurseurs(false)}>AU DOIGT</button>
+              <button className={curseurs ? "bp" : "bs"} style={S.segment} onClick={() => basculerCurseurs(true)}>CURSEURS</button>
+            </div>
+            <label style={S.etiquette}>VUE DU TERRAIN</label>
+            <div style={S.rangee}>
+              <button className={vue === "dessus" ? "bp" : "bs"} style={S.segment} onClick={() => choisirVue("dessus")}>DE DESSUS</button>
+              <button className={vue === "joueur" ? "bp" : "bs"} style={S.segment} onClick={() => choisirVue("joueur")}>JOUEUR</button>
+            </div>
+            <label style={S.etiquette}>CHARTE</label>
+            <div style={S.rangee}>
+              {ORDRE_CHARTES.map(c => (
+                <button key={c} className={charte === c ? "bp" : "bs"} style={S.segment}
+                        onClick={() => choisirCharte(c)}>{CHARTES[c].nom.toUpperCase()}</button>
+              ))}
+            </div>
+            <p style={S.note}>Les deux réglages sont personnels et se changent en pleine partie : c'est fait pour comparer.</p>
+            <button className="bp" style={{ minHeight: 44 }} onClick={() => setOptions(false)}>FERMER</button>
+          </div>
+        </div>
+      )}
       {outils(true)}
       {tourneeEnAttente && me && !me.bot && game.tourneePending === me.team && (
         <div style={S.voile}>
@@ -3405,7 +3469,7 @@ export default function Petanque() {
             {surimpressions}
             {plaqueComplete}
           </div>
-          <div style={{ ...S.commandes, height: curseurs ? "auto" : 44, paddingBottom: curseurs ? 6 : 0 }}>
+          <div style={{ ...S.commandes, background: CH.rangee, height: curseurs ? "auto" : 44, paddingBottom: curseurs ? 6 : 0 }}>
             {/* Rangée de 44 px, boutons de 38 px visuels (maquette-jeu.html) ;
                 la zone de tap reste à 46 px par un débord invisible. Pendant la
                 phase du cochonnet, un seul bouton à la place de la paire. */}
@@ -3418,7 +3482,7 @@ export default function Petanque() {
                   <button className={(mode === "tir" ? "bp" : "bs") + " bj"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("tir")}>TIRER</button>
                 </>
               )}
-              <button className="bs bj" style={S.boutonOptions} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" taille={19} /></button>
+              <button className="bs bj" style={S.boutonOptions} aria-label="Options" title="Options" onClick={() => setOptions(true)}><Ico nom="engrenage" taille={19} /></button>
             </div>
             {curseurs && (
               <div style={S.plaqueCurseurs}>

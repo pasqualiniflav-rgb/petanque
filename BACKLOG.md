@@ -271,6 +271,27 @@ Tracés repris de `docs/maquette-choix-figure.html`, qui fait foi. Seule la coul
 
 **Écart assumé, signalé.** La mission fait du couvre-chef un axe de personnalisation *et* le signe distinctif de plusieurs figures. Poser le chef choisi sur les neuf portraits les rendait indistinguables, ce qui contredit le critère de reconnaissance à la silhouette. Arbitrage : dans la galerie, chaque figure garde **son** couvre-chef d'origine ; le chef choisi ne se pose que sur la figure retenue, sur la carte de profil et en jeu.
 
+## 🎥 Lot 2 — le second rendu derrière un interrupteur
+
+Deux nouveaux fichiers : `chartes.js` (les deux peaux) et `vuejoueur.js` (la projection et le rendu). Un seul point d'entrée pour la projection, `projeter(v, T, x, y)`, qui rend une position écran **et** une échelle ; boules, cochonnet, cercle, repère et figure y passent tous. Aucune coordonnée écran ne remonte dans le moteur.
+
+| Ce qui doit être prouvé | Preuve | Résultat |
+|---|---|---|
+| Bascule en cours de partie, sans perte d'état | bascule au milieu d'une mène, relevé DOM avant/après | mène, scores et joueur au tour identiques — seul le chrono avance ✅ |
+| ... et la bascule n'écrit rien dans l'état partagé | lecture du code des deux fonctions de réglage | zéro appel à `mutate` ou `saveGame` ✅ |
+| Le rendu actuel est intact | comparaison du source avec le commit du lot 1 | `drawField` **identique au caractère près** (9 687 car.), `stepPhysics` et `corpsLance` aussi ✅ |
+| Cibles tactiles ≥ 44 px | zone de tap mesurée par `elementFromPoint` | icônes 46, boutons de jeu 46, options 47 — **aucune sous le plancher** ✅ |
+| Aucune fuite de charte ivoire | grep des 8 couleurs ivoire dans `App.jsx` | **0 occurrence** ✅ |
+| Les deux réglages sont indépendants et conservés | `localStorage` `petanque.vue` / `petanque.charte` | vue et charte réglables séparément, relues au chargement ✅ |
+| Pas de mini-carte en vue joueur | le nouveau rendu n'en dessine aucune | ✅ |
+
+**Corrigé au passage** : les petits boutons des plaques d'information étaient à 36 px de tap, sous le plancher. Débord invisible ajouté, comme aux boutons de jeu.
+
+**Écarts assumés, signalés.**
+- Le tableau de structure de la mission donne barre 56 px, compteur 106 px, boutons 52 px. Ce sont les cotes de l'écran ivoire ; les adopter changerait la disposition par défaut, ce que la règle 4 interdit. La disposition actuelle (46 / 104 / 44) est conservée dans les deux vues.
+- Le compteur reste le **bandeau replié** du lot 0 bis, pas la plaque de 106 px : un seul composant, comme ce même lot l'exige.
+- **Non livré** : la jauge de force flottant au-dessus des boutons, et le panneau posé dans la scène (que la mission donne comme facultatif).
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
