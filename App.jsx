@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { FIGURES, ORDRE_FIGURES, COUVRE_CHEFS, ORDRE_CHEFS, POLOS, ORDRE_POLOS, Portrait, figureValide } from "./figures.jsx";
 import { CHARTES, ORDRE_CHARTES, charteDe } from "./chartes.js";
-import { dessinerVueJoueur } from "./vuejoueur.js";
+import { dessinerVueJoueur, cameraVisee } from "./vuejoueur.js";
 
 // ------------------------------------------------------------------
 // Pétanque en ligne — jusqu'à 9 joueurs (3 équipes), temps réel.
@@ -1933,6 +1933,10 @@ export default function Petanque() {
   const [galerie, setGalerie] = useState(false); // choix de la figure
   const vueRef = useRef("dessus");
   const charteRef = useRef("actuelle");
+  // La caméra de la vue joueur et l'avancement du geste. Purement locaux :
+  // ils se déduisent de l'état déjà partagé et ne le touchent jamais.
+  const camRef = useRef(null);
+  const gesteRenduRef = useRef({ debut: 0, mode: "point" });
   // Les deux réglages du lot 2. Personnels, conservés entre les parties, et
   // changeables EN COURS DE PARTIE : c'est tout l'intérêt de la comparaison.
   // Ils ne touchent pas à l'état partagé — ce sont deux façons de dessiner
@@ -2237,6 +2241,7 @@ export default function Petanque() {
     const ivresse = Math.min(6, (g.drinks && moi && g.drinks[moi.team]) || 0);
     const who = g.players.find(p => p.id === g.replay.thrown.pid);
     poserAnimating(true);
+    gesteRenduRef.current = { debut: 0, mode: g.replay.thrown?.tir ? "tir" : "point" };
     const ctx = cv.getContext("2d");
     const marquer = !revoir; // un « Revoir » ne recreuse pas le terrain
     let frames = 0;
@@ -2265,10 +2270,17 @@ export default function Petanque() {
         const moving = stepPhysics(bodies, Tg);
         marquerTraces(bodies, Tg, marquer);
         if (vueRef.current === "joueur") {
-          const lui = g.players.find(p => p.id === nextToPlay(g));
+          const lanceurId = g.replay?.thrown?.pid;
+          const lui = g.players.find(p => p.id === lanceurId) || g.players.find(p => p.id === nextToPlay(g));
+          camRef.current = cameraVisee(Tg, bodies, departDe(Tg), camRef.current);
+          // le geste dure une douzaine d'images, au départ du lancer
+          const gr = gesteRenduRef.current;
+          const av = Math.max(0, Math.min(1, (frames - gr.debut) / 12));
           dessinerVueJoueur(ctx, g, bodies, null, Tg, {
             largeur: largeurVue, hauteur: VIEW_H, charte: charteRef.current, depart: departDe(Tg),
-            couleurs: TEAM_COLORS, figures: { lanceur: lui && lui.fig ? { ...lui.fig, team: lui.team } : null },
+            couleurs: TEAM_COLORS, camY: camRef.current,
+            geste: av < 1 ? av : 0, mode: gr.mode,
+            figures: { lanceur: lui && lui.fig ? { ...lui.fig, team: lui.team } : null },
           });
         } else {
           drawField(ctx, g, bodies, null, ivresse, Tg);
@@ -2437,9 +2449,11 @@ export default function Petanque() {
     if (vue === "joueur") {
       const lanceur = turnPlayer && turnPlayer.fig
         ? { ...turnPlayer.fig, team: turnPlayer.team } : null;
-      dessinerVueJoueur(ctx2, game, gel ? gel.bodies : makeBodies(game), visee, T, {
+      const corpsVus = gel ? gel.bodies : makeBodies(game);
+      camRef.current = cameraVisee(T, corpsVus, departDe(T), camRef.current);
+      dessinerVueJoueur(ctx2, game, corpsVus, visee, T, {
         largeur: largeurVue, hauteur: VIEW_H, charte, depart: departDe(T),
-        couleurs: TEAM_COLORS, figures: { lanceur },
+        couleurs: TEAM_COLORS, figures: { lanceur }, camY: camRef.current,
       });
     } else {
       drawField(ctx2, game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
@@ -2714,11 +2728,27 @@ export default function Petanque() {
     // doit aboutir quand même, sinon la partie reste figée sur ce coup.
     const ctx = canvasRef.current ? canvasRef.current.getContext("2d") : null;
     let frames = 0;
+    // Le lanceur voit EXACTEMENT la même séquence que les autres : même
+    // caméra, même geste. Seule la source des corps diffère — ici on simule,
+    // là-bas on rejoue l'annonce — et la physique étant déterministe, le
+    // résultat est le même image par image.
+    gesteRenduRef.current = { debut: 0, mode: genre === "tir" ? "tir" : "point" };
     const loop = () => {
       try {
         const moving = stepPhysics(bodies, Ts);
         marquerTraces(bodies, Ts);
-        if (ctx) drawField(ctx, st, bodies, null, ivresse, Ts);
+        if (ctx && vueRef.current === "joueur") {
+          camRef.current = cameraVisee(Ts, bodies, departDe(Ts), camRef.current);
+          const av = Math.max(0, Math.min(1, frames / 12));
+          dessinerVueJoueur(ctx, st, bodies, null, Ts, {
+            largeur: largeurVue, hauteur: VIEW_H, charte: charteRef.current, depart: departDe(Ts),
+            couleurs: TEAM_COLORS, camY: camRef.current,
+            geste: av < 1 ? av : 0, mode: gesteRenduRef.current.mode,
+            figures: { lanceur: lanceur.fig ? { ...lanceur.fig, team: lanceur.team } : null },
+          });
+        } else if (ctx) {
+          drawField(ctx, st, bodies, null, ivresse, Ts);
+        }
         frames++;
         if (moving && frames < 1200) { requestAnimationFrame(loop); }
         else { fusionnerTraces(); commit(st, bodies, thrown, replayMeta, pid, auto); }

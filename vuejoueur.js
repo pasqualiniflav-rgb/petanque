@@ -6,21 +6,40 @@ import { charteDe } from "./chartes.js";
 // Un seul point d'entrée pour la projection. Il prend une position du
 // terrain et rend une position écran plus une échelle. Tout passe par lui :
 // boules, cochonnet, figures, cercle, panneau.
-export function vueDe(T, largeur, hauteur) {
-  const dMax = Math.max(1, T.L - 30);
+// `camY` : la ligne du terrain derrière laquelle se tient la caméra. Au repos
+// c'est le cercle de lancer — tout le monde lance du même endroit, la caméra
+// ne bouge donc pas de la mène. Pendant un vol, elle avance avec la boule.
+export function vueDe(T, largeur, hauteur, camY) {
+  const cam = camY == null ? T.L - 30 : camY;
   return {
     f: 0.14 * T.L,                       // « focale » : règle l'écrasement
     cx: largeur / 2,
     horizon: Math.round(hauteur * 0.16), // ligne d'horizon, sous la bande fixe
     bas: hauteur - Math.round(hauteur * 0.06),
     ex: (largeur * 0.8) / Math.max(1, T.W / 2),
-    dMax, largeur, hauteur,
+    cam, largeur, hauteur,
   };
 }
 export function projeter(v, T, x, y) {
-  const d = Math.max(0, (T.L - 30) - y);
+  const d = Math.max(0, v.cam - y);
   const k = v.f / (v.f + d);
   return { x: v.cx + (x - T.W / 2) * k * v.ex, y: v.horizon + (v.bas - v.horizon) * k, k };
+}
+// Où doit se tenir la caméra à cette image : derrière la boule qui vole,
+// sinon derrière le cercle. Entièrement déduit de l'état déjà partagé —
+// qui joue, ce qu'il lance, où la boule en est. Rien de neuf à diffuser.
+export function cameraVisee(T, corps, depart, precedent) {
+  let cible = null, vmax = 0.6;
+  for (const b of corps) {
+    if (b.dead) continue;
+    const sp = Math.hypot(b.vx || 0, b.vy || 0);
+    if (sp > vmax) { vmax = sp; cible = b; }
+  }
+  const repos = depart.y;
+  const voulu = cible ? Math.min(repos, cible.y + T.L * 0.14) : repos;
+  if (precedent == null) return voulu;
+  // lissage : la caméra décroche et revient sans à-coup
+  return precedent + (voulu - precedent) * (cible ? 0.18 : 0.08);
 }
 
 const R_BOULE_VUE = 16; // les boules sont volontairement grossies
@@ -29,7 +48,7 @@ const R_COCH_VUE = 9;
 export function dessinerVueJoueur(ctx, st, corps, aim, T, opts) {
   const { largeur, hauteur, charte, depart, figures } = opts;
   const C = charteDe(charte);
-  const v = vueDe(T, largeur, hauteur);
+  const v = vueDe(T, largeur, hauteur, opts.camY);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, largeur, hauteur);
 
@@ -101,18 +120,35 @@ export function dessinerVueJoueur(ctx, st, corps, aim, T, opts) {
   }
 
   // --- la figure du lanceur, de dos, dans le cercle
-  if (figures && figures.lanceur) dessinerVillageois(ctx, c0, figures.lanceur, opts.couleurs, C);
+  if (figures && figures.lanceur) {
+    dessinerVillageois(ctx, c0, figures.lanceur, opts.couleurs, C, {
+      angle: aim ? aim.angle : 0, geste: opts.geste || 0, mode: opts.mode,
+    });
+  }
   return v;
 }
 
 // Le villageois de dos : silhouette, foulard d'équipe, numéro dans le dos.
 // Le polo personnel ne s'affiche PAS ici — sur le terrain, l'équipe prime.
-export function dessinerVillageois(ctx, p, fig, couleurs, C) {
+// `pose.geste` va de 0 à 1 pendant le lancer : balancier ample pour le
+// pointé, élan sec pour le tir. `pose.angle` fait pivoter la figure quand le
+// joueur règle sa direction.
+export function dessinerVillageois(ctx, p, fig, couleurs, C, pose) {
   const h = 74;                       // hauteur au premier plan
   const l = h * 0.42;
-  const x = p.x, y = p.y - 4;
+  const g = pose ? Math.max(0, Math.min(1, pose.geste || 0)) : 0;
+  const tir = pose && pose.mode === "tir";
+  // le balancier : ample et lent au pointé, court et sec au tir
+  const bras = g > 0 ? Math.sin(g * Math.PI) * (tir ? 0.5 : 1) : 0;
+  const x = p.x + (pose ? Math.sin(((pose.angle || 0) * Math.PI) / 180) * l * 0.18 : 0);
+  const y = p.y - 4 + bras * (tir ? 3 : 6);
   const teinte = couleurs[fig.team] || "#888";
   ctx.save();
+  if (pose && pose.angle) {
+    ctx.translate(p.x, p.y);
+    ctx.rotate(((pose.angle || 0) * Math.PI) / 180 * 0.35);
+    ctx.translate(-p.x, -p.y);
+  }
   // ombre au sol
   ctx.fillStyle = "rgba(70,55,30,0.28)";
   ctx.beginPath(); ctx.ellipse(x, y + 2, l * 0.62, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -147,6 +183,15 @@ export function dessinerVillageois(ctx, p, fig, couleurs, C) {
   ctx.beginPath();
   ctx.ellipse(x, y - h * 0.82, l * (fig.chef === "paille" ? 0.52 : 0.34), l * 0.16, 0, 0, Math.PI * 2);
   ctx.fill();
+  // le bras qui lance, pendant le geste
+  if (g > 0) {
+    ctx.strokeStyle = "#e0a878"; ctx.lineWidth = l * 0.17; ctx.lineCap = "round";
+    const a = (tir ? -1.5 : -2.2) + bras * (tir ? 1.7 : 2.6);
+    ctx.beginPath();
+    ctx.moveTo(x + l * 0.42, y - h * 0.52);
+    ctx.lineTo(x + l * 0.42 + Math.cos(a) * l * 0.62, y - h * 0.52 + Math.sin(a) * l * 0.62);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

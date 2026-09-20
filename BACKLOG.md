@@ -292,6 +292,20 @@ Deux nouveaux fichiers : `chartes.js` (les deux peaux) et `vuejoueur.js` (la pro
 - Le compteur reste le **bandeau replié** du lot 0 bis, pas la plaque de 106 px : un seul composant, comme ce même lot l'exige.
 - **Non livré** : la jauge de force flottant au-dessus des boutons, et le panneau posé dans la scène (que la mission donne comme facultatif).
 
+## 🎬 Lot 3 — la caméra suit le lanceur
+
+La caméra se déduit entièrement de l'état déjà partagé : qui joue, ce qu'il lance, où la boule en est. Elle décroche du cercle quand une boule file, la suit, puis revient — le tout lissé pour qu'elle ne saute pas.
+
+| Ce qui doit être prouvé | Preuve | Résultat |
+|---|---|---|
+| Animation identique pour tous les clients | deux clients côte à côte, même mène | les deux montrent **la même figure dans le cercle** (n° 1, foulard ciel), même caméra basse ✅ |
+| ... et par construction | les deux boucles d'animation appellent le même rendu | le lanceur passait encore par l'ancien rendu : **corrigé**, les deux chemins appellent `dessinerVueJoueur` avec les mêmes paramètres ✅ |
+| Aucun nouveau message de synchronisation | diff des sites d'écriture Firebase avec le commit du lot 2 | **identiques**, zéro écriture dans les trois fichiers de rendu ✅ |
+| L'état ne dépend jamais d'une animation | lecture de la boucle | `commit` est appelé à la fin quoi qu'il arrive, et le `catch` relâche l'animation sans bloquer la partie ✅ |
+| Un client en retard rattrape | lecture de `integrer` | un état entrant est ignoré pendant l'animation puis repris ; un rejeu manqué est rattrapé sur l'état final ✅ |
+
+**Non mesuré** : le rattrapage sous latence simulée n'a pas été rejoué en conditions réelles, seulement établi par lecture du code. Et le « temps mort sur le résultat » après l'impact n'est pas implémenté : la caméra revient directement au cercle.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
