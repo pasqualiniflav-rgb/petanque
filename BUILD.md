@@ -1,6 +1,10 @@
 # Compiler le jeu (source → app.js)
 
-Le jeu est développé dans `App.jsx` (source lisible). Le fichier `app.js`
+Le jeu est développé dans `App.jsx` (source lisible), accompagné depuis la
+mission « parcours figure » de trois modules : `figures.jsx` (les neuf
+figures, les couvre-chefs, les polos), `chartes.js` (les deux chartes — les
+couleurs ivoire ne vivent QUE là) et `vuejoueur.js` (la projection et le
+rendu à la 3ᵉ personne). Le fichier `app.js`
 servi par la page est sa version compilée. Après toute modification de
 `App.jsx`, recompiler :
 
@@ -49,6 +53,13 @@ sur un bot à l'expiration.
 
 ```bash
 npx esbuild tests/pause.js --bundle --platform=node --alias:react=./tests/react-vide.js --outfile=/tmp/pause.cjs && node /tmp/pause.cjs
+```
+
+`tests/figures.js` vérifie les neuf figures, l'unicité du numéro dans la
+partie et le forçage des couvre-chefs entre coéquipiers.
+
+```bash
+npx esbuild tests/figures.js --bundle --platform=node --alias:react=./tests/react-vide.js --outfile=/tmp/fig.cjs && node /tmp/fig.cjs
 ```
 
 `tests/bots.js` vérifie la règle « qui joue pour un bot » (hôte présent,
