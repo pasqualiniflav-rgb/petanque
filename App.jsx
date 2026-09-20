@@ -57,11 +57,12 @@ export const TERRAINS = {
     camera: false, subSteps: 2, stopSeuil: 0.2,
     muRoll: 0.9687, angleMax: 25,
     vPoint: p => (2.9 + (p / 100) * 4.6) * 2.2,
-    // Atterrissage : la boule mord le sable (muChute) tant qu'elle file, puis
-    // ROULE (muRoll) sous vRoule — deux régimes distincts, voir stepPhysics.
+    // Atterrissage : la boule tirée mord le sable UNE FOIS en touchant terre
+    // (amorti), puis elle roule comme un pointé (muRoll). Le dérapage d'un
+    // choc (skidMu) est un troisième régime, qui colle jusqu'à l'arrêt.
     // Le dérapage après un choc (skidMu) est un troisième régime, sans sortie
     // en roulé : la frappante meurt sur place, le carreau reste sec.
-    vTir: 18.7, muChute: 0.8, vRoule: 0.55, airMin: 40, tirAjust: 0.965,
+    vTir: 18.7, amorti: 0.14, airMin: 40, tirAjust: 0.965,
     cochMin: 170, skidSeuil: 8.8, skidMu: 0.8,
     volPoint: 0.5,  // part de la portée qu'un pointé fait en l'air avant de rouler
     // Cochonnet : plus léger, il part en cloche plus courte et va un peu
@@ -73,7 +74,7 @@ export const TERRAINS = {
     camera: true, subSteps: 12, stopSeuil: 0.34,
     muRoll: 0.9582, angleMax: 8,
     vPoint: p => (12 + (p / 100) * 58) * 1.7,
-    vTir: 37.4, muChute: 0.832, vRoule: 0.9, airMin: 100, tirAjust: 0.985,
+    vTir: 37.4, amorti: 0.215, airMin: 100, tirAjust: 0.985,
     cochMin: 1400, skidSeuil: 20.4, skidMu: 0.78,
     volPoint: 0.5,
     volCoch: 0.4, cochVif: 1.1,
@@ -87,10 +88,9 @@ export const TERRAINS = {
 // Même formule partout : déterministe.
 for (const T of Object.values(TERRAINS)) {
   const coef = (T.tirAjust * (T.volPoint + (1 - T.volPoint) * T.muRoll)) / (1 - T.muRoll);
-  // Glisse = morsure (jusqu'à vRoule) + roulé final. airTir s'y ajuste pour
-  // que le tir porte toujours comme le pointé.
-  const glisse = (T.muChute * (T.vTir - T.vRoule)) / (1 - T.muChute)
-               + (T.vRoule * T.muRoll) / (1 - T.muRoll);
+  // Glisse = ce que la boule parcourt après avoir mordu le sable, en roulé.
+  // airTir s'y ajuste pour que le tir porte toujours comme le pointé.
+  const glisse = (T.vTir * T.amorti * T.muRoll) / (1 - T.muRoll);
   T.airTir = p => Math.max(T.airMin, coef * T.vPoint(p) - glisse);
 }
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
@@ -246,7 +246,15 @@ export function stepPhysics(bodies, T) {
       b.x += b.vx / n; b.y += b.vy / n;
       if (b.air > 0) {
         b.air -= Math.hypot(b.vx, b.vy) / n; // en vol : pas de frottement
-        if (b.air <= 0) b.air = 0;
+        if (b.air <= 0) {
+          b.air = 0;
+          // LE FROTTEMENT D'ATTERRISSAGE : la boule tirée mord le sable une
+          // seule fois, en touchant terre, et perd là l'essentiel de son
+          // élan. Ensuite elle ROULE (muRoll), comme un pointé. Rien à voir
+          // avec le dérapage post-impact (skidMu), qui lui colle jusqu'à
+          // l'arrêt et garde le carreau sec.
+          if (b.tir && !b.pose) { b.pose = 1; b.vx *= T.amorti; b.vy *= T.amorti; }
+        }
       }
       if (b.kind === "coch") { // le cochonnet rebondit sur les bords
         if (b.x < b.r) { b.x = b.r; b.vx *= -0.5; }
@@ -300,8 +308,9 @@ export function stepPhysics(bodies, T) {
     if (b.air <= 0 || b.air === undefined) {
       // b.mu posé par un choc = dérapage, il colle jusqu'à l'arrêt (carreau sec).
       // Sinon la boule tirée mord à l'atterrissage puis passe au roulé.
-      const mu = b.mu
-        || (b.tir && Math.hypot(b.vx, b.vy) > T.vRoule ? T.muChute : T.muRoll);
+      // b.mu posé par un choc = dérapage, il colle jusqu'à l'arrêt (carreau
+      // sec). Sinon tout ce qui est au sol roule, tiré comme pointé.
+      const mu = b.mu || T.muRoll;
       b.vx *= mu; b.vy *= mu;
     }
     if (Math.hypot(b.vx, b.vy) < T.stopSeuil) { b.vx = 0; b.vy = 0; } else moving = true;

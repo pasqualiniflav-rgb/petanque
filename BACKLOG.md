@@ -163,6 +163,33 @@ L'item « scoreboard » (B4 du sprint mobile, B3 polish, A1 affinage) est **ferm
 | D8 | Phase cochonnet : un unique bouton jaune « LANCER LE COCHONNET », engrenage conservé à droite ; retour à la paire dès la première boule | ✅ |
 | D9 | Toast noir supprimé du code : `ardoiseFlottante` (posée à `top: 62`, donc **en plein sur la plaque**) et la pastille sombre arrondie `ardoise` remplacées par le bandeau de charte — bande opaque pleine largeur collée au bas du terrain | ✅ |
 
+## 🪟 Sprint retouches II bis — maquettes remplacées, cotes au pixel
+
+Maquettes `maquette-jeu.html` et `maquette-terrain-long.html` remplacées par Flavio (commit `e42b060`) : elles font foi, cote par cote.
+
+| # | Item | État |
+|---|------|------|
+| A1 | Tir à vide (4e passage) : **ré-instrumenté avant toute correction**, par deux mesures indépendantes. Verdict : aucune ligne n'écrasait la vitesse, et le frottement du carreau n'était PAS appliqué à l'atterrissage — le code était déjà conforme à la lettre du point 1, et la cible en pixels déjà tenue. Le vrai défaut était la **durée** : 84 % de la glisse se faisait dans le premier quart de seconde, puis la boule se figeait | ✅ |
+| A2 | Correction : le frottement d'atterrissage devient une **morsure unique** (`amorti`), appliquée à l'image où la boule touche terre ; ensuite elle roule comme un pointé (`muRoll`). `muChute` et `vRoule` disparaissent — un seul régime au sol, plus le dérapage `skidMu` posé par un choc, qui colle jusqu'à l'arrêt. `airTir` se règle sur la nouvelle glisse : la règle d'or tient (écart max 2,6 %). Mesuré : **75 px en 1,32 s dont 0,52 s visibles** (classique, contre 0,22 s) et **177 px en 1,22 s dont 0,82 s** (long, contre 0,32 s) | ✅ |
+| A3 | Contrepartie assumée et chiffrée : la fenêtre de carreau se resserre (classique 30,5 → 21,5 unités de force, long 9,5 → 7,5) et la boule frappée part moins loin sur le grand terrain (332 → 94 px). Une seule constante par terrain la règle : `amorti` | ✅ |
+| B2 | Bande fixe 118 px, plaque 68 px, rails 16 px à 5 et 25, pastilles 14 px, poteaux 10 × 34 px de bois foncé, centrés à 28 % et 72 % de la largeur — mesurés dans le DOM à 0,2 px près, à 390 et à 360 | ✅ |
+| B3 | Les « deux longues barres claires » : c'étaient les ombres des pieds, larges de **84 px au lieu de 34**, posées sur un dégradé sombre qui les faisait lire en clair. Ramenées à 34 × 5 px sous chaque pied. Supprimés avec elles : le fondu sombre au bas de la bande et l'ombre portée des platanes en haut du terrain — sous les poteaux, plus rien d'autre n'est dessiné | ✅ |
+| C4 | Le repère de direction **part du cercle de lancer** (dessiné en coordonnées monde, pointillé 6/6 sur 64 px) et reste visible pendant toute la visée, au doigt comme aux curseurs. Mini-carte aux cotes de la maquette (46 × 336), avec la zone du cochonnet et le cadre de vue | ✅ |
+| C5 | **La bande fixe a son propre canvas**, en pixels CSS 1:1, hors du canvas du terrain. Plus de parallaxe, plus de calcul de letterbox, plus de DOM qui court après une ligne du canvas : les cotes des maquettes s'appliquent littéralement | ✅ |
+| D6 | POINTER / TIRER / engrenage : 38 px visuels dans une rangée de 44 px, typo 14 px, ombre dure 2 px, zone de tap ramenée à 46 px par débord invisible (`::after`, `inset:-6px 0` — la bordure de 2 px mange 2 px du débord) | ✅ |
+| D7 | Barre d'icônes : 46 px de haut, fond `#27607e`, icônes 34 px, tap 46 px. « Revoir » toujours présent, grisé (`#ddd6c1` / `#8a8f96`, opacité .75) | ✅ |
+| D8 | Bouton unique « LANCER LE COCHONNET » — et il **fonctionne enfin au doigt** : il lançait dans le vide hors mode curseurs | ✅ |
+| D9 | Le composant legacy était `styles.ardoise` : une bande quasi noire posée **dans le flux**, hors terrain. Supprimée, ses quatre usages passent en plaque émaillée (`motInfo`). Sur le terrain il ne reste qu'un seul bandeau ardoise, en surimpression, désormais collé **en haut** sous la bande fixe | ✅ |
+| D10 | Budget vertical exact : 46 + 118 + terrain + 44 = 844 à 390 px, et 740 à 360 px. Padding et gouttières de la colonne supprimés, bordures bois du terrain retirées (10 px rendus) | ✅ |
+
+### Restes signalés, non corrigés (hors autorisation de ce sprint)
+
+- **La planche hors-jeu coupe la vitesse à zéro** (`stepPhysics`, butée des boules mortes) : un tir qui franchit la ligne du fond encore rapide s'arrête d'un coup, mesuré à 297 px/s sur le grand terrain à force 100. C'est un vrai « plantage net », mais il est hors du frottement d'atterrissage, seul point autorisé à bouger.
+- **Un frôlement pose `skidMu`** comme un carreau plein fer : à 21 px du centre la glisse tombe de moitié, en falaise.
+- **La boucle de rendu cadence la physique sur l'écran** : à 120 Hz la simulation va deux fois plus vite. Le déterminisme tient (même nombre de pas), mais pas la sensation.
+- **Le grand terrain ne montre que ~53 % de sa largeur** : les lignes de côté sortent du cadre, alors que la maquette les montre.
+- **Blocage au cochonnet** reproduit sur le build commité : `enCours` reste vrai et avale le lancer en silence pendant 8 s.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |

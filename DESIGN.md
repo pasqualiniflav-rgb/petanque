@@ -68,9 +68,12 @@ sur bois comme sur crème.
 
 ## 5. Terrain
 
-Pleine largeur de l'écran (zéro marge latérale morte), fin cadre bois.
+Pleine largeur de l'écran (zéro marge latérale morte) et **bord à bord en
+hauteur** : depuis le remplacement des maquettes, le terrain n'a plus de cadre
+bois — la bande fixe le borde en haut, la rangée de boutons en bas.
 **Le décor de village existant (ciel, façades, platanes) est conservé tel
-quel** — validé par Flavio, on ne le retouche pas. Traces et impacts
+quel** — validé par Flavio, on ne le retouche pas ; seule la ligne de sol a
+été remontée pour tenir dans les 118 px de la bande. Traces et impacts
 conservés.
 
 ## 5 bis. Maquettes de référence (validées)
@@ -79,6 +82,29 @@ Trois écrans témoins font foi pour l'application de cette charte : Accueil,
 Écran de jeu (fronton + terrain pleine largeur + boutons imprimés), Pop-in
 tournée en plaque émaillée. En cas de doute sur un composant, reproduire la
 maquette.
+
+## 5 ter. Écran de jeu — budget vertical (maquette-jeu.html)
+
+Quatre bandes, sans gouttière ni padding : **barre d'icônes 46 px**, **bande
+fixe 118 px**, **terrain en `flex: 1 1 auto`**, **rangée de boutons 44 px**.
+Le total tombe pile sur la hauteur de l'écran ; tout pixel récupéré ailleurs
+va au terrain.
+
+La bande fixe a **son propre canvas**, dessiné en pixels CSS 1:1 — elle ne
+défile jamais et ne subit aucune mise à l'échelle. Le panneau s'y plante :
+plaque à 8 px du haut sur 68 px, poteaux de 10 × 34 px centrés à **28 % et
+72 % de la largeur de la bande**, et sous chaque pied une ombre **dure et
+courte de 34 × 5 px** (`rgba(70,55,30,.28)`). Rien d'autre n'est dessiné là :
+ni fondu sombre, ni ombre portée de feuillage.
+
+Boutons de jeu : **38 px visuels** dans la rangée de 44, typo 14 px, ombre
+dure 2 px. La zone de tap reste à 46 px par un débord invisible
+(`::after { inset: -6px 0 }` — la bordure de 2 px en absorbe 2 de chaque côté).
+Icônes : 34 px, tap 46 px, sur fond `#27607e`.
+
+Messages passagers : **sur le terrain**, le bandeau ardoise, en surimpression,
+collé en haut sous la bande fixe — il ne prend pas un pixel au terrain.
+**Hors terrain**, jamais de bande sombre : une plaque émaillée.
 
 ## 6. Lisibilité du geste
 
@@ -99,4 +125,5 @@ Les règles vivent dans l'aide (?), pas sur les écrans.
 2. Tout panneau/pop-in est une plaque émaillée (pas une carte sombre floue) ?
 3. Chiffres de score en Oswald, titres en Alfa Slab One ?
 4. Aucune ombre diffuse, aucun translucide flouté ?
-5. Terrain pleine largeur, testé sur les DEUX terrains et en 360 px ?
+5. Terrain pleine largeur, testé sur les DEUX terrains, en 390 px et en 360 px ?
+6. Budget vertical de la section 5 ter respecté au pixel (mesuré dans le DOM) ?
