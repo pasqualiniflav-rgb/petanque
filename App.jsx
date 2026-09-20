@@ -19,10 +19,11 @@ const HAUT_VUE = 28;
 let VIEW_W = 340 + 2 * HORS_G;              // fenêtre de jeu : le terrain classique et ses bandes, au minimum
 const VIEW_H = 520 + HAUT_VUE + HORS_B;
 // Bande de décor FIXE au-dessus du terrain : village, sol de la place, et la
-// bande de sable hors-jeu où se plantent les poteaux du panneau. Elle ne
-// défile jamais — la fenêtre caméra glisse dessous (maquette-terrain-long).
-const SKY_H = 112;
-const CANVAS_H = VIEW_H + SKY_H;   // hauteur réelle du canvas
+// bande de sable hors-jeu où se plantent les poteaux du panneau. Elle a son
+// PROPRE canvas, en pixels CSS 1:1, hors du canvas du terrain : le sol ne
+// défile donc jamais sous les pieds du panneau, et les cotes des maquettes
+// s'appliquent au pixel près (118 px — maquette-jeu.html).
+const BANDE_H = 118;
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
 export function reglerLargeurVue(w) {
   // Vers le haut, pas un pixel de côté ; sur un téléphone étroit la fenêtre
@@ -716,8 +717,9 @@ function dessinerDecorStylise(cx, W, H) {
   colline(H * 0.5, 0.6, "#8fa9b2");
   colline(H * 0.57, 2.1, "#6b8a7e");
 
-  // rangée de façades et toits de tuiles
-  const solVillage = H * 0.76;
+  // rangée de façades et toits de tuiles. Le sol de la place laisse voir
+  // 30 px sous la plaque, comme dans maquette-jeu.html.
+  const solVillage = H * 0.56;
   const facades = ["#e6cfa4", "#d9b98b", "#cfa878", "#e9d9b6", "#c99a6c"];
   let x = -16, k = 0;
   while (x < W + 12) {
@@ -742,11 +744,11 @@ function dessinerDecorStylise(cx, W, H) {
 
   // sol de la place, puis la bande de sable hors-jeu où se plantent les
   // poteaux du panneau de score
-  const basPlace = H - 20;
-  const sol = cx.createLinearGradient(0, solVillage - 2, 0, basPlace);
-  sol.addColorStop(0, "#c9ab77");
-  sol.addColorStop(1, "#ac8b5c");
-  cx.fillStyle = sol; cx.fillRect(0, solVillage - 1, W, basPlace - solVillage + 1);
+  // Cotes de maquette-jeu.html : sol de la place #ead9bb à liseré #c07a52,
+  // puis jupe de sable #d8c49a à liseré #c9b183 sur les 22 derniers pixels.
+  const basPlace = H - 22;
+  cx.fillStyle = "#ead9bb"; cx.fillRect(0, solVillage, W, basPlace - solVillage);
+  cx.fillStyle = "#c07a52"; cx.fillRect(0, solVillage, W, 4);
   cx.fillStyle = "#d8c49a"; cx.fillRect(0, basPlace, W, H - basPlace);
   cx.fillStyle = "#c9b183"; cx.fillRect(0, basPlace, W, 4);
 
@@ -858,14 +860,10 @@ function textureOmbrePlatane() {
 function bandeDecor() {
   if (decorCache) return decorCache;
   const cv = document.createElement("canvas");
-  cv.width = decorLargeur(); cv.height = SKY_H;
+  cv.width = decorLargeur(); cv.height = BANDE_H;
   const cx = cv.getContext("2d");
-  if (photoDecor) dessinerPhotoDecor(cx, decorLargeur(), SKY_H);
-  else dessinerDecorStylise(cx, decorLargeur(), SKY_H);
-  const fondu = cx.createLinearGradient(0, SKY_H - 18, 0, SKY_H);
-  fondu.addColorStop(0, "rgba(58,44,24,0)");
-  fondu.addColorStop(1, "rgba(58,44,24,0.38)");
-  cx.fillStyle = fondu; cx.fillRect(0, SKY_H - 18, decorLargeur(), 18);
+  if (photoDecor) dessinerPhotoDecor(cx, decorLargeur(), BANDE_H);
+  else dessinerDecorStylise(cx, decorLargeur(), BANDE_H);
   decorCache = cv;
   return cv;
 }
@@ -1259,24 +1257,24 @@ let voileCache = null;
 function voileLumiere() {
   if (voileCache) return voileCache;
   const cv = document.createElement("canvas");
-  cv.width = VIEW_W; cv.height = CANVAS_H;
+  cv.width = VIEW_W; cv.height = VIEW_H;
   const cx = cv.getContext("2d");
   // le soleil est bas à droite : la lumière traverse la scène en biais
-  const chaud = cx.createLinearGradient(VIEW_W, 0, 0, CANVAS_H);
+  const chaud = cx.createLinearGradient(VIEW_W, 0, 0, VIEW_H);
   chaud.addColorStop(0, "rgba(255,206,124,0.16)");
   chaud.addColorStop(0.4, "rgba(255,196,118,0.07)");
   chaud.addColorStop(1, "rgba(86,74,128,0.08)"); // à l'opposé, l'ombre bleuit
   cx.fillStyle = chaud;
-  cx.fillRect(0, 0, VIEW_W, CANVAS_H);
+  cx.fillRect(0, 0, VIEW_W, VIEW_H);
   // vignettage : les bords s'éteignent doucement
   const vig = cx.createRadialGradient(
-    VIEW_W * 0.5, CANVAS_H * 0.46, VIEW_W * 0.3,
-    VIEW_W * 0.5, CANVAS_H * 0.46, CANVAS_H * 0.7);
+    VIEW_W * 0.5, VIEW_H * 0.46, VIEW_W * 0.3,
+    VIEW_W * 0.5, VIEW_H * 0.46, VIEW_H * 0.7);
   vig.addColorStop(0, "rgba(38,28,12,0)");
   vig.addColorStop(0.65, "rgba(38,28,12,0.08)");
   vig.addColorStop(1, "rgba(38,28,12,0.3)");
   cx.fillStyle = vig;
-  cx.fillRect(0, 0, VIEW_W, CANVAS_H);
+  cx.fillRect(0, 0, VIEW_W, VIEW_H);
   voileCache = cv;
   return cv;
 }
@@ -1287,7 +1285,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   const list = bodiesOverride || makeBodies(st);
   const START = departDe(T);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, VIEW_W, CANVAS_H);
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   // Caméra du grand terrain : elle suit ce qui bouge, sinon le cochonnet
   let cam = null;
@@ -1310,16 +1308,13 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   // coin haut-gauche de la fenêtre, en coordonnées terrain
   const fen = cam ? { x: cam.x - VIEW_W / 2, y: cam.y - VIEW_H / 2 } : { x: -(VIEW_W - T.W) / 2, y: -HAUT_VUE };
 
-  // bande de décor : elle glisse doucement quand la caméra se déplace
-  const glisse = cam ? (cam.x / T.W - 0.5) : 0;
-  ctx.drawImage(bandeDecor(), -(decorLargeur() - VIEW_W) / 2 - glisse * (decorLargeur() - VIEW_W), 0);
-
-  // le terrain vit sous la bande de décor
+  // La bande de décor a son propre canvas, au-dessus : ce canvas-ci ne
+  // contient QUE le terrain, du premier au dernier pixel.
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, SKY_H, VIEW_W, VIEW_H);
+  ctx.rect(0, 0, VIEW_W, VIEW_H);
   ctx.clip();
-  ctx.setTransform(1, 0, 0, 1, -fen.x, SKY_H - fen.y);
+  ctx.setTransform(1, 0, 0, 1, -fen.x, -fen.y);
 
   // sable : le grain couvre toute la fenêtre, bandes hors-jeu comprises ;
   // nuances et traces ne concernent que le terrain lui-même. On ne peint
@@ -1365,13 +1360,13 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.lineWidth = 3;
   ctx.strokeRect(5, 5, T.W - 8, T.L - 8);
   ctx.beginPath();
-  ctx.arc(START.x + 1, START.y + 1, 20, 0, Math.PI * 2);
+  ctx.arc(START.x + 1, START.y + 1, 23, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(243,234,212,0.62)";
+  ctx.strokeStyle = "rgba(242,236,220,0.8)"; // crème de la maquette
   ctx.lineWidth = 2;
   ctx.strokeRect(4, 4, T.W - 8, T.L - 8);
   ctx.beginPath();
-  ctx.arc(START.x, START.y, 20, 0, Math.PI * 2);
+  ctx.arc(START.x, START.y, 23, 0, Math.PI * 2);
   ctx.stroke();
   for (const b of list) {
     if (b.dead) { // hors-jeu : grisée, translucide, posée dans la bande
@@ -1420,59 +1415,70 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
   ctx.restore();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // ombre portée des platanes sur le haut du terrain
-  const ombre = ctx.createLinearGradient(0, SKY_H, 0, SKY_H + 26);
-  ombre.addColorStop(0, "rgba(46,36,18,0.30)");
-  ombre.addColorStop(1, "rgba(46,36,18,0)");
-  ctx.fillStyle = ombre;
-  ctx.fillRect(0, SKY_H, VIEW_W, 26);
-
   // lumière de fin d'après-midi sur l'ensemble de la scène
   ctx.drawImage(voileLumiere(), 0, 0);
 
-  // Repère de visée, en coordonnées écran, ancré en bas au centre là où le
-  // joueur se tient : une courte ligne pointillée à faible opacité, qui
-  // s'estompe à mesure que le geste s'allonge. La direction se devine.
+  // Repère de visée : il PART DU CERCLE DE LANCER, comme au vrai boulodrome
+  // (maquette-terrain-long.html : 2 px de large, 64 px, pointillé 6/6). Court
+  // et discret, il s'estompe à mesure que le geste s'allonge : la direction
+  // se devine, jamais la distance.
   if (aim && aim.trace) {
-    const ax = VIEW_W / 2, ay = SKY_H + VIEW_H - HORS_B - 30;
+    const ax = START.x - fen.x, ay = START.y - fen.y;
     const rad = (aim.angle * Math.PI) / 180;
-    const len = 52;
-    const alpha = 0.38 - 0.28 * Math.min(1, aim.progression || 0);
+    const d0 = 26, len = 64; // il démarre au bord du cercle, pas en son centre
+    const alpha = 0.55 - 0.33 * Math.min(1, aim.progression || 0);
     ctx.save();
-    ctx.lineCap = "round";
     ctx.strokeStyle = `rgba(107,87,58,${alpha.toFixed(3)})`; ctx.lineWidth = 2;
-    ctx.setLineDash([3, 5]);
-    ctx.beginPath(); ctx.moveTo(ax, ay - 14); ctx.lineTo(ax + Math.sin(rad) * len, ay - 14 - Math.cos(rad) * len); ctx.stroke();
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(ax + Math.sin(rad) * d0, ay - Math.cos(rad) * d0);
+    ctx.lineTo(ax + Math.sin(rad) * (d0 + len), ay - Math.cos(rad) * (d0 + len));
+    ctx.stroke();
     ctx.restore();
   }
 
-  // mini-carte du grand terrain
+  // Mini-carte du grand terrain (maquette-terrain-long.html : 46 x 336, en
+  // haut à droite). Elle montre TOUT le terrain et la zone du cochonnet,
+  // y compris pendant la visée où la caméra, elle, reste sur le cercle.
   if (T.camera && cam) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const mw = 40, mh = Math.round(mw * T.L / T.W);
-    const mx = VIEW_W - mw - 6, my = SKY_H + HAUT_VUE + 20, s = mw / T.W; // sous le fronton planté en haut
-    // petite plaquette posée sur le terrain, cerclée de jaune pastis
-    ctx.fillStyle = "rgba(38,30,14,0.5)";
-    ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
-    ctx.fillStyle = "rgba(206,186,144,0.8)";
+    // cotes rapportées à la fenêtre : la carte tombe sur les 46 x 336 px de
+    // la maquette quelle que soit l'échelle d'affichage du canvas
+    const mw = Math.round(VIEW_W * (46 / 390)), mh = Math.round(VIEW_H * (336 / 636));
+    const mx = VIEW_W - mw - Math.round(VIEW_W * (8 / 390)), my = Math.round(VIEW_H * (14 / 636));
+    const sx = mw / T.W, sy = mh / T.L;
+    ctx.save();
+    ctx.globalAlpha = 0.94;
+    ctx.fillStyle = "#cdb98f";
     ctx.fillRect(mx, my, mw, mh);
-    ctx.strokeStyle = "rgba(246,195,36,0.45)"; ctx.lineWidth = 1;
-    ctx.strokeRect(mx - 1.5, my - 1.5, mw + 3, mh + 3);
+    ctx.strokeStyle = "#efe6cf"; ctx.lineWidth = 1.5;
+    ctx.strokeRect(mx - 0.75, my - 0.75, mw + 1.5, mh + 1.5);
+    // la zone où le cochonnet est valable, cadre crème
+    const zy0 = my + (T.L - 30 - T.cochMin * 1.5) * sy;
+    const zy1 = my + (T.L - 30 - T.cochMin) * sy;
+    ctx.strokeStyle = "#f2ecdc"; ctx.lineWidth = 1.5;
+    ctx.strokeRect(mx + 4, zy0, mw - 8, zy1 - zy0);
     if (aim) { // direction du lancer (jamais la distance)
+      ctx.strokeStyle = "rgba(107,87,58,0.7)"; ctx.lineWidth = 2;
       const rad = (aim.angle * Math.PI) / 180;
-      ctx.strokeStyle = "rgba(60,50,30,0.6)";
       ctx.beginPath();
-      ctx.moveTo(mx + START.x * s, my + START.y * s);
-      ctx.lineTo(mx + (START.x + Math.sin(rad) * T.L * 0.16) * s, my + (START.y - Math.cos(rad) * T.L * 0.16) * s);
+      ctx.moveTo(mx + START.x * sx, my + START.y * sy);
+      ctx.lineTo(mx + (START.x + Math.sin(rad) * T.L * 0.08) * sx,
+                 my + (START.y - Math.cos(rad) * T.L * 0.08) * sy);
       ctx.stroke();
     }
     for (const b of list) {
       if (b.dead) continue;
       ctx.fillStyle = b.kind === "coch" ? "#c67f1e" : TEAM_COLORS[b.team];
-      ctx.fillRect(mx + b.x * s - 1.5, my + b.y * s - 1.5, 3, 3);
+      ctx.beginPath();
+      ctx.arc(mx + b.x * sx, my + b.y * sy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.strokeStyle = "rgba(255,250,232,0.9)";
-    ctx.strokeRect(mx + (cam.x - VIEW_W / 2) * s, my + (cam.y - VIEW_H / 2) * s, VIEW_W * s, VIEW_H * s);
+    // le cadre de vue : où regarde la caméra en ce moment
+    ctx.strokeStyle = "#26200c"; ctx.lineWidth = 1.5;
+    ctx.strokeRect(mx + (cam.x - VIEW_W / 2) * sx, my + (cam.y - VIEW_H / 2) * sy,
+                   VIEW_W * sx, VIEW_H * sy);
+    ctx.restore();
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
@@ -1492,10 +1498,19 @@ const CSS_BASE = `
 .bs.creux{background:transparent}
 .bi{width:40px;height:40px;background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;color:${NUIT};font-size:18px;font-weight:700}
 .bi.g{width:46px;height:46px;font-size:20px}
-.bi.p{width:38px;height:38px;font-size:17px}
+.bi.p{width:34px;height:34px;font-size:17px;box-shadow:0 2px 0 rgba(0,0,0,.35);position:relative}
+.bi.p::after{content:'';position:absolute;inset:-8px}/* 34 + 2x6 = 46 px de tap */
+.bi.p:active{transform:translateY(2px)}
 .bi.off svg{opacity:.35}
-.bi.eteint{background:#ddd6c1;border-color:#8a8f96;box-shadow:0 3px 0 rgba(138,143,150,.5);cursor:default}
-.bi.eteint:active{transform:none;box-shadow:0 3px 0 rgba(138,143,150,.5)}
+.bi.eteint{background:#ddd6c1;border-color:#8a8f96;box-shadow:0 2px 0 rgba(0,0,0,.18);opacity:.75;cursor:default}
+.bi.eteint:active{transform:none;box-shadow:0 2px 0 rgba(0,0,0,.18)}
+.bj{min-height:38px;height:38px;padding:0 8px;font-size:14px;letter-spacing:1.5px;position:relative}
+.bp.bj{box-shadow:0 2px 0 ${NUIT}}
+.bs.bj{box-shadow:0 2px 0 rgba(29,58,79,.6)}
+.bj::after{content:'';position:absolute;inset:-6px 0}/* 38 + 2x4 = 46 px de tap */
+.bj:active{transform:translateY(2px);box-shadow:none}
+.bp.bj:disabled:active{transform:none;box-shadow:0 2px 0 ${NUIT}}
+.bs.bj:disabled:active{transform:none;box-shadow:0 2px 0 rgba(29,58,79,.6)}
 .bp:active,.bs:active,.bi:active{transform:translateY(3px);box-shadow:none}
 .bp:disabled,.bs:disabled{opacity:.45;cursor:default}
 .bp:disabled:active,.bs:disabled:active{transform:none;box-shadow:0 3px 0 ${NUIT}}
@@ -1798,29 +1813,44 @@ export default function Petanque() {
   // Largeur interne du canvas épousant le cadre : mesurée au chargement
   // et à chaque changement de taille
   const cadreRef = useRef(null);
+  const bandeRef = useRef(null);
   const [largeurVue, setLargeurVue] = useState(VIEW_W);
-  // Géométrie de l'image dans sa boîte : même calcul que posCanvas (object-fit
-  // contain, calée en bas). Sans le décalage, tout DOM aligné sur une ligne du
-  // canvas se trompe de la hauteur du letterbox — et les pieds des poteaux
-  // tombent dans le terrain qui défile.
-  const [vueBoite, setVueBoite] = useState({ k: 1, dy: 0, largeur: 390 });
+  // Largeur de la bande fixe, en pixels CSS : son canvas est dessiné 1:1, sans
+  // object-fit ni mise à l'échelle. Les cotes des maquettes s'y appliquent donc
+  // au pixel près, et rien n'a plus à « rattraper » le letterbox du terrain.
+  const [largeurBande, setLargeurBande] = useState(390);
   useEffect(() => {
     const el = cadreRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const mesurer = () => {
       const bw = el.clientWidth, bh = el.clientHeight; // la boîte intérieure, bordures exclues
       if (bw < 10 || bh < 10) return;
-      const w = (CANVAS_H * bw) / bh;
+      // la fenêtre interne épouse le rapport de la boîte : zéro bande morte
+      const w = (VIEW_H * bw) / bh;
       if (reglerLargeurVue(w)) setLargeurVue(VIEW_W);
-      const k = Math.min(bw / VIEW_W, bh / CANVAS_H);
-      setVueBoite(v => (v.k === k && v.dy === bh - CANVAS_H * k && v.largeur === bw)
-        ? v : { k, dy: bh - CANVAS_H * k, largeur: bw });
+      setLargeurBande(l => (l === bw ? l : bw));
     };
     mesurer();
     const ro = new ResizeObserver(mesurer);
     ro.observe(el);
     return () => ro.disconnect();
   }, [screen, game?.phase]);
+  // La bande fixe se redessine seulement quand sa largeur change : c'est un
+  // décor, il ne bouge jamais d'une image à l'autre.
+  useEffect(() => {
+    const cv = bandeRef.current;
+    if (!cv) return;
+    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    cv.width = Math.round(largeurBande * dpr);
+    cv.height = Math.round(BANDE_H * dpr);
+    const cx = cv.getContext("2d");
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const bande = bandeDecor();
+    // le décor est centré et couvre toujours toute la largeur, sans parallaxe :
+    // une bande FIXE ne glisse pas quand la caméra se déplace
+    const w = Math.max(bande.width, largeurBande);
+    cx.drawImage(bande, Math.round((largeurBande - w) / 2), 0, w, BANDE_H);
+  }, [largeurBande, largeurVue, screen, game?.phase]);
   const tenantRef = useRef({ mene: null, team: null });
   const criCompteurRef = useRef(0);
   useEffect(() => {
@@ -2188,10 +2218,11 @@ export default function Petanque() {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !game || game.phase === "lobby" || animating) return;
-    // `aim` couvre toute la phase de visée (c'est lui qui ancre la caméra sur
-    // le cercle de lancer) ; `trace` dit s'il y a une direction à dessiner.
+    // `aim` couvre toute la phase de visée : c'est lui qui ancre la caméra sur
+    // le cercle de lancer, et le repère de direction part de ce cercle pendant
+    // toute la visée, aux deux modes de lancer (maquette-terrain-long.html).
     const visee = geste ? { angle: geste.angle, progression: (geste.power - 25) / 75, trace: true }
-      : peutLancer ? { angle, progression: 0, trace: curseurs }
+      : peutLancer ? { angle, progression: 0, trace: true }
       : null;
     drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
   }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue, peutLancer]);
@@ -2520,8 +2551,8 @@ export default function Petanque() {
     // L'image est ajustée et centrée dans la boîte (object-fit: contain) :
     // on retrouve son échelle et ses décalages
     const r = e.currentTarget.getBoundingClientRect();
-    const k = Math.min(r.width / VIEW_W, r.height / CANVAS_H);
-    const dx = (r.width - VIEW_W * k) / 2, dy = r.height - CANVAS_H * k; // calée en bas
+    const k = Math.min(r.width / VIEW_W, r.height / VIEW_H);
+    const dx = (r.width - VIEW_W * k) / 2, dy = r.height - VIEW_H * k; // calée en bas
     return { x: (e.clientX - r.left - dx) / k, y: (e.clientY - r.top - dy) / k };
   };
 
@@ -2597,7 +2628,7 @@ export default function Petanque() {
     const cl = "bi" + (grand ? " g" : enPartie ? " p" : "");
     const t = grand ? 22 : enPartie ? 18 : 20;
     return (
-      <div style={S.outils}>
+      <div style={enPartie ? S.outilsPartie : S.outils}>
         {/* Toujours présent, grisé quand il n'y a rien à revoir : la barre ne
             bouge pas d'un pixel d'un coup à l'autre */}
         {enPartie && (() => {
@@ -2660,14 +2691,14 @@ export default function Petanque() {
               )}
             </>
           )}
-          {notice && <div style={S.ardoise}>{notice}</div>}
+          {notice && <div style={S.motInfo}>{notice}</div>}
         </div>
         {outils(false, true)}
       </div>
     );
   }
 
-  if (!game) return <div style={S.page}><style>{CSS_BASE}</style><div style={S.ardoise}>Chargement…</div></div>;
+  if (!game) return <div style={S.page}><style>{CSS_BASE}</style><div style={S.motInfo}>Chargement…</div></div>;
 
   // ---- Salon -------------------------------------------------------
   if (game.phase === "lobby") {
@@ -2747,7 +2778,7 @@ export default function Petanque() {
           </div>
         )}
         {!isHost && (
-          <div style={{ ...S.ardoise, maxWidth: 390, width: "100%" }}>
+          <div style={S.motInfo}>
             Terrain {terrainDe(game).nom}{game.sansTournee ? ", sans tournée" : ""} — {meneur?.name ?? "l'hôte"} lance la partie…
           </div>
         )}
@@ -2755,7 +2786,7 @@ export default function Petanque() {
           <button className="bi g" aria-label="Accueil" title="Accueil" onClick={quitter}><Ico nom="maison" taille={22} /></button>
           {outils(false, true)}
         </div>
-        {notice && <div style={{ ...S.ardoise, maxWidth: 390, width: "100%" }}>{notice}</div>}
+        {notice && <div style={S.motInfo}>{notice}</div>}
       </div>
     );
   }
@@ -2779,7 +2810,8 @@ export default function Petanque() {
     : (!animating && !gel) ? resteTemps : null;
   const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#4b6a44" }; // lisibles sur le bois
   const trois = equipes.length > 2;
-  const railH = trois ? 12 : 16, railPas = trois ? 18 : 22, railTop = trois ? 4 : 6;
+  // Rails de maquette-jeu.html : 16 px de haut, à 5 px puis 25 px du haut
+  const railH = trois ? 12 : 16, railPas = trois ? 17 : 20, railTop = trois ? 4 : 5;
   const rail = (t, i) => {
     const sc = Math.max(0, Math.min(13, game.scores[t] || 0));
     return (
@@ -2788,7 +2820,7 @@ export default function Petanque() {
           <span key={n} style={{ ...S.railChiffre, visibility: n === sc ? "hidden" : "visible" }}>{n}</span>
         ))}
         {/* le jeton glisse le long du rail jusqu'à sa case (transition CSS) */}
-        <span style={{ ...S.jeton, width: trois ? 13 : 15, height: trois ? 13 : 15, background: TEAM_COLORS[t], left: `calc(4px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 8px))` }}>{sc}</span>
+        <span style={{ ...S.jeton, width: trois ? 12 : 14, height: trois ? 12 : 14, background: TEAM_COLORS[t], left: `calc(3px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 6px))` }}>{sc}</span>
       </div>
     );
   };
@@ -2801,7 +2833,7 @@ export default function Petanque() {
   const flanc = (t, sens) => (
     <span key={t} style={{ ...S.flanc, flexDirection: sens === "droite" ? "row-reverse" : "row",
                            justifyContent: sens === "centre" ? "center" : "flex-start" }}>
-      <span style={{ ...S.pastille, width: 7, height: 7, background: TEAM_COLORS[t] }} />
+      <span style={{ ...S.pastille, width: 7, height: 7, boxShadow: "0 0 0 1.2px #4a2f16", background: TEAM_COLORS[t] }} />
       {game.mene && <span>{restantes(t)}</span>}
       {(game.drinks?.[t] || 0) > 0 && <>{verreGrave}<span>{game.drinks[t]}</span></>}
     </span>
@@ -2817,36 +2849,29 @@ export default function Petanque() {
       {nomTour && <> · <span style={{ color: NOMS_GRAVES[turnPlayer.team] }}>{nomTour}</span></>}
     </span>
   );
-  // Panneau planté dans la bande de décor (il mord sur les façades, c'est
-  // sa place) : 76 px, poteaux à 28 % et 72 % de sa largeur, pieds posés
-  // 6 px au-dessus de la ligne du fond — jamais dans l'aire de jeu.
-  const hautPlaque = 6;
-  // Les pieds se posent dans la bande de sable au bas du décor — une bande
-  // FIXE : le sol ne défile jamais sous le panneau, même caméra en marche
-  const basBandeFixe = Math.round(vueBoite.dy + SKY_H * vueBoite.k);
-  const basPlaque = hautPlaque + 76;
-  const pieds = Math.max(basPlaque + 28, basBandeFixe - 6);
-  const hautPoteaux = basPlaque - 6;
-  const largeurPlaque = vueBoite.largeur - 28;
+  // Panneau planté DANS la bande fixe de 118 px, aux cotes de maquette-jeu.html :
+  // plaque haute de 68 px posée à 8 px du haut, poteaux de 10 x 34 px à 28 %
+  // et 72 %, et sous chaque pied une ombre dure et courte de 34 x 5 px. Rien
+  // d'autre n'est dessiné là, et rien ne dépasse dans la fenêtre du terrain.
   const fronton = (
     <>
-      <div style={{ ...S.plaqueOmbre, top: pieds - 2, left: 14 + 0.28 * largeurPlaque - 42, width: 84 }} />
-      <div style={{ ...S.plaqueOmbre, top: pieds - 2, left: 14 + 0.72 * largeurPlaque - 42, width: 84 }} />
-      <div style={{ ...S.poteau, left: 14 + 0.28 * largeurPlaque - 5, top: hautPoteaux, height: pieds - hautPoteaux }} />
-      <div style={{ ...S.poteau, left: 14 + 0.72 * largeurPlaque - 5, top: hautPoteaux, height: pieds - hautPoteaux }} />
-      <div style={{ ...S.plaqueBois, top: hautPlaque }}>
+      <div style={{ ...S.plaqueOmbre, left: "28%" }} />
+      <div style={{ ...S.plaqueOmbre, left: "72%" }} />
+      <div style={{ ...S.poteau, left: "28%" }} />
+      <div style={{ ...S.poteau, left: "72%" }} />
+      <div style={S.plaqueBois}>
         {equipes.map(rail)}
         {trois ? (
           <div style={{ ...S.bandeau, top: 58, fontSize: 10 }}>
             {flanc(equipes[0], "gauche")}{flanc(equipes[1], "centre")}{flanc(equipes[2], "droite")}
           </div>
         ) : (
-          <div style={{ ...S.bandeau, top: 52 }}>
+          <div style={{ ...S.bandeau, top: 46 }}>
             {flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}
           </div>
         )}
       </div>
-      {trois && <div style={{ ...S.microLigne, top: hautPlaque + 80 }}>{ligneCentre}</div>}
+      {trois && <div style={S.microLigne}>{ligneCentre}</div>}
     </>
   );
 
@@ -2924,29 +2949,35 @@ export default function Petanque() {
         </>
       ) : (
         <>
+          {/* BANDE FIXE : décor du village, plaque plantée, poteaux. Elle ne
+              bouge JAMAIS — la fenêtre caméra du terrain défile dessous. */}
+          <div style={S.bandeFixe}>
+            <canvas ref={bandeRef} style={S.canvasBande} />
+            {fronton}
+          </div>
           <div ref={cadreRef} style={{
             ...S.cadreTerrain,
             ...ivresseStyle(ivresseNiveau),
           }}>
-            <canvas ref={canvasRef} width={largeurVue} height={CANVAS_H} style={S.canvas}
+            <canvas ref={canvasRef} width={largeurVue} height={VIEW_H} style={S.canvas}
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
-            {fronton}
             {surimpressions}
           </div>
-          <div style={{ ...S.commandes, height: curseurs ? 156 : 52 }}>
-            {/* Rangée de 52 px, boutons de 44 px (maquette-jeu.html). Pendant la
+          <div style={{ ...S.commandes, height: curseurs ? "auto" : 44, paddingBottom: curseurs ? 6 : 0 }}>
+            {/* Rangée de 44 px, boutons de 38 px visuels (maquette-jeu.html) ;
+                la zone de tap reste à 46 px par un débord invisible. Pendant la
                 phase du cochonnet, un seul bouton à la place de la paire. */}
             <div style={{ ...S.rangee, gap: 6 }}>
               {cochToThrow ? (
-                <button className="bp" disabled={!peutLancer} style={S.boutonJeu} onClick={() => curseurs && throwBoule()}>LANCER LE COCHONNET</button>
+                <button className="bp bj" disabled={!peutLancer} style={S.boutonJeu} onClick={() => throwBoule()}>LANCER LE COCHONNET</button>
               ) : (
                 <>
-                  <button className={mode === "point" ? "bp" : "bs"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("point")}>POINTER</button>
-                  <button className={mode === "tir" ? "bp" : "bs"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("tir")}>TIRER</button>
+                  <button className={(mode === "point" ? "bp" : "bs") + " bj"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("point")}>POINTER</button>
+                  <button className={(mode === "tir" ? "bp" : "bs") + " bj"} disabled={!peutLancer} style={S.boutonJeu} onClick={() => setMode("tir")}>TIRER</button>
                 </>
               )}
-              <button className="bs" style={S.boutonOptions} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" taille={19} /></button>
+              <button className="bs bj" style={S.boutonOptions} aria-label="Options" title={curseurs ? "Lancer au doigt" : "Préférer les curseurs"} onClick={() => basculerCurseurs(!curseurs)}><Ico nom="engrenage" taille={19} /></button>
             </div>
             {curseurs && (
               <div style={S.plaqueCurseurs}>
@@ -2989,9 +3020,10 @@ const styles = {
     height: "100dvh", overflow: "hidden", background: "linear-gradient(180deg, #27607e 0%, #333d24 62%, #232919 100%)",
     color: CREME, fontFamily: "'Oswald', -apple-system, 'Segoe UI', Roboto, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "stretch",
-    // bord à bord ; en bas, une marge de sécurité pour que le geste n'aille
-    // pas chercher la barre de navigation du téléphone
-    padding: "6px 0 calc(24px + env(safe-area-inset-bottom, 0px))", boxSizing: "border-box", gap: 6,
+    // bord à bord, zéro gouttière : la barre d'icônes touche le haut, la
+    // rangée de boutons touche le bas, et le terrain prend tout le reste.
+    // En bas, la seule marge est celle de la barre de navigation du téléphone.
+    padding: "0 0 env(safe-area-inset-bottom, 0px)", boxSizing: "border-box", gap: 0,
     maxWidth: 520, margin: "0 auto", // sur grand écran, le jeu reste une colonne
   },
   enseigne: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 8, textAlign: "center" },
@@ -3040,22 +3072,35 @@ const styles = {
   segment: { flex: 1, padding: "10px 6px", fontSize: 15, letterSpacing: 1, minHeight: 46 },
   large: { width: "100%", maxWidth: 390, boxSizing: "border-box" },
   outils: { display: "flex", justifyContent: "center", gap: 8, padding: "0 6px" },
+  // En partie : bande de 46 px, fond bleu émail, icônes de 34 px (maquette-jeu.html)
+  outilsPartie: {
+    flex: "0 0 46px", height: 46, background: "#27607e", display: "flex",
+    alignItems: "center", justifyContent: "center", gap: 8, padding: "0 6px",
+    boxSizing: "border-box", flexShrink: 0,
+  },
   pastille: { width: 10, height: 10, borderRadius: "50%", flexShrink: 0, boxShadow: "0 0 0 1.5px #4a2f16" }, // liseré : lisible sur bois comme sur crème
   equipeTete: { display: "flex", alignItems: "center", gap: 8 },
   equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
   puces: { display: "flex", flexWrap: "wrap", gap: 6 },
-  // Le bandeau d'information de la charte, hors partie : bande opaque pleine
-  // largeur, texte crème, une ligne. Aucune pastille sombre arrondie.
-  ardoise: {
-    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
-    padding: "7px 12px", textAlign: "center", boxSizing: "border-box",
-    width: "100%", maxWidth: 390,
+  // HORS TERRAIN, un message passager est une PLAQUE ÉMAILLÉE de la charte —
+  // jamais une bande sombre posée dans le flux. L'ardoise, elle, ne vit que
+  // sur le terrain (ardoiseBandeau), en surimpression.
+  motInfo: {
+    width: "100%", maxWidth: 390, boxSizing: "border-box",
+    background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
+    boxShadow: "0 2px 0 rgba(29, 58, 79, 0.6)",
+    padding: "7px 12px", textAlign: "center",
+    fontSize: 12, fontWeight: 600, letterSpacing: 0.5,
   },
-  // Bandeau d'information de la charte : bande ardoise opaque, pleine largeur,
-  // collée au bas du terrain — jamais flottante au milieu, jamais sur le panneau
+  // Bandeau d'information de la charte : bande ardoise OPAQUE, pleine largeur,
+  // collée en HAUT du terrain, juste sous la bande fixe. Jamais flottante au
+  // milieu, jamais un cartouche sombre arrondi, et surtout en surimpression :
+  // elle ne prend pas un pixel de hauteur au terrain. C'est le seul canal des
+  // messages passagers — replay, arrivée d'un joueur, complément d'équipe.
   ardoiseBandeau: {
-    position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 4,
-    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
+    position: "absolute", left: 0, right: 0, top: 0, zIndex: 4, boxSizing: "border-box",
+    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 600, letterSpacing: 1,
+    borderBottom: "2px solid #8a6b43", fontFamily: "'Oswald', sans-serif",
     padding: "6px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
   // Le cri du Sud : plaque posée sur le terrain, le temps de le dire
@@ -3067,13 +3112,18 @@ const styles = {
   },
   criTexte: { fontFamily: "'Alfa Slab One', serif", fontSize: 19, lineHeight: 1.2, letterSpacing: 0.5 },
   // Le terrain : pleine largeur, fin cadre bois ; les bandeaux s'y collent
-  // Le terrain : bord à bord, fin cadre bois, fond sable uni ; le fronton
-  // est planté dessus, en haut
+  // LA BANDE FIXE (118 px, maquette-jeu.html) : décor du village, plaque
+  // plantée et poteaux. Elle ne bouge jamais ; le terrain défile dessous.
+  bandeFixe: {
+    flex: `0 0 ${BANDE_H}px`, height: BANDE_H, position: "relative", overflow: "hidden",
+    width: "100%", boxSizing: "border-box", flexShrink: 0,
+    background: "linear-gradient(180deg, #a9d3e8, #cfe6ef)",
+  },
+  canvasBande: { display: "block", width: "100%", height: BANDE_H },
+  // Le terrain : bord à bord, du bas de la bande fixe jusqu'aux boutons
   cadreTerrain: {
-    position: "relative", flex: 1, minHeight: 0, width: "100%", boxSizing: "border-box",
-    borderTop: "5px solid #8a6b43", borderBottom: "5px solid #8a6b43", overflow: "hidden",
-    // ciel en haut (le vide éventuel passe sous le fronton), sable hors-jeu ailleurs
-    background: "linear-gradient(180deg, #3f95cd 0, #3f95cd 12%, #cdb992 12%, #cdb992 100%)",
+    position: "relative", flex: "1 1 auto", minHeight: 0, width: "100%", boxSizing: "border-box",
+    overflow: "hidden", background: "#d8c49a",
     display: "flex", justifyContent: "center", alignItems: "flex-start",
   },
   // Le canvas remplit le cadre ; l'image garde son ratio, calée en bas —
@@ -3082,11 +3132,11 @@ const styles = {
     display: "block", width: "100%", height: "100%", objectFit: "contain", objectPosition: "50% 100%",
     touchAction: "none", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
   },
-  // Rangée de commandes : 52 px de haut, aucun padding vertical — le terrain
-  // descend jusqu'à elle (cotes de maquette-jeu.html)
-  commandes: { display: "flex", flexDirection: "column", gap: 4, padding: "0 6px", boxSizing: "border-box", flexShrink: 0, justifyContent: "center" },
-  boutonJeu: { flex: 1, height: 44, minHeight: 44, padding: "0 8px", fontSize: 15, letterSpacing: 2 },
-  boutonOptions: { width: 44, height: 44, minHeight: 44, padding: 0, flexShrink: 0 },
+  // Rangée de commandes : 44 px de haut, boutons de 38 px, aucun padding
+  // vertical — le terrain descend jusqu'à elle (cotes de maquette-jeu.html)
+  commandes: { display: "flex", flexDirection: "column", gap: 4, padding: "0 6px", boxSizing: "border-box", flexShrink: 0, justifyContent: "center", background: "#232919" },
+  boutonJeu: { flex: 1, height: 38, minHeight: 38, padding: "0 8px", fontSize: 14, letterSpacing: 1.5 },
+  boutonOptions: { width: 38, height: 38, minHeight: 38, padding: 0, flexShrink: 0 },
   plaqueCurseurs: {
     background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
     boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", padding: "4px 8px 6px", display: "flex", flexDirection: "column", gap: 2,
@@ -3096,24 +3146,28 @@ const styles = {
   // Le fronton du boulodrome
   // La plaque de bois à rails, valeurs de maquette-scoreboard.html
   plaqueBois: {
-    position: "absolute", top: 6, left: 14, right: 14, height: 70, zIndex: 3, boxSizing: "content-box",
+    position: "absolute", top: 8, left: 10, right: 10, height: 68, zIndex: 3, boxSizing: "content-box",
     background: "repeating-linear-gradient(180deg, rgba(122, 90, 53, 0.14) 0 3px, rgba(0, 0, 0, 0) 3px 14px), linear-gradient(180deg, #c59a63, #a87d4b)",
     border: "3px solid #7a5a35", borderRadius: 8,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
     color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
   },
-  // Bois foncé contrasté, épaisseur 10 px (maquette-terrain-long.html)
-  poteau: { position: "absolute", width: 10, zIndex: 2, background: "linear-gradient(90deg, #8a6540, #6b4e30)", borderRadius: 2 },
-  // Ombre de la charte : dure et courte, pas de halo diffus
+  // Poteaux : bois foncé contrasté, 10 x 34 px, plantés à 28 % et 72 %
+  poteau: {
+    position: "absolute", top: 74, width: 10, height: 34, marginLeft: -5, zIndex: 2,
+    background: "linear-gradient(90deg, #8a6540, #6b4e30)", borderRadius: 2,
+  },
+  // Ombre de la charte : DURE et COURTE, un simple trait sous chaque pied.
+  // 34 x 5 px, jamais une barre qui traverse le terrain.
   plaqueOmbre: {
-    position: "absolute", left: "24%", width: "52%", height: 6, zIndex: 2, borderRadius: 3,
-    background: "rgba(70, 55, 30, 0.28)",
+    position: "absolute", top: 106, width: 34, height: 5, marginLeft: -17, zIndex: 1,
+    borderRadius: 3, background: "rgba(70, 55, 30, 0.28)",
   },
   rail: {
     position: "absolute", left: 10, right: 10, borderTop: "2px solid #7a5a35", borderBottom: "2px solid #7a5a35",
-    display: "flex", alignItems: "center", padding: "0 4px",
+    display: "flex", alignItems: "center", padding: "0 3px", boxSizing: "border-box",
   },
-  railChiffre: { flex: 1, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", lineHeight: 1 },
+  railChiffre: { flex: 1, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },
   jeton: {
     position: "absolute", top: "50%", transform: "translate(-50%, -50%)", width: 15, height: 15, borderRadius: "50%",
     color: "#ffffff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -3123,7 +3177,7 @@ const styles = {
   bandeau: { position: "absolute", left: 12, right: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },
   flanc: { flex: 1, display: "flex", alignItems: "center", gap: 3, minWidth: 0 },
   graveCentre: { flex: "0 0 auto", fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", whiteSpace: "nowrap" },
-  microLigne: { position: "absolute", top: 99, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif" },
+  microLigne: { position: "absolute", top: 86, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif", color: "#4a2f16" },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",
