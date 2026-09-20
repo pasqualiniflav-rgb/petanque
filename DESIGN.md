@@ -88,27 +88,39 @@ maquette.
 ## 5 ter. Écran de jeu — budget vertical (maquette-jeu.html)
 
 Quatre bandes, sans gouttière ni padding : **barre d'icônes 46 px**, **bande
-fixe 130 px**, **terrain en `flex: 1 1 auto`**, **rangée de boutons 44 px**.
+fixe 104 px**, **terrain en `flex: 1 1 auto`**, **rangée de boutons 44 px**.
 Le total tombe pile sur la hauteur de l'écran ; tout pixel récupéré ailleurs
 va au terrain.
 
 La bande fixe a **son propre canvas**, dessiné en pixels CSS 1:1 — elle ne
 défile jamais et ne subit aucune mise à l'échelle. Le panneau s'y plante :
-plaque à 40 px du haut sur 54 px, poteaux de 10 × 34 px centrés à **28 % et
-72 % de la largeur de la bande**, et sous chaque pied une ombre **dure et
-courte de 34 × 5 px** (`rgba(70,55,30,.28)`). Rien d'autre n'est dessiné là :
-ni fondu sombre, ni ombre portée de feuillage.
+un **bandeau replié** calé par le bas — 28 px à deux équipes, 44 px à trois —
+sur deux poteaux de 10 × 26 px centrés à **28 % et 72 % de la largeur de la
+bande**, et sous chaque pied une ombre **dure et courte de 34 × 5 px**
+(`rgba(70,55,30,.28)`). Rien d'autre n'est dessiné là : ni fondu sombre, ni
+ombre portée de feuillage.
+
+**Le compteur a deux états, un seul composant.** Replié, le bandeau porte pour
+chaque équipe son jeton posé sur son score, ses boules restantes et son verre
+de tournées ; à deux équipes la première est collée à gauche, la seconde à
+droite, la ligne d'état au centre ; à trois, les groupes se répartissent dans
+l'ordre fixe **ciel, rouge, sauge** et la ligne d'état passe dessous. Déplié,
+la plaque à rails s'ouvre **en surimpression sur le terrain** — deux secondes
+en fin de mène, le temps que le jeton grimpe, ou jusqu'au clic suivant quand
+c'est le joueur qui l'ouvre. Elle ne pousse jamais le terrain : un terrain qui
+se décale pendant que quelqu'un vise déplace sa cible sous son doigt.
 
 Boutons de jeu : **38 px visuels** dans la rangée de 44, typo 14 px, ombre
 dure 2 px. La zone de tap reste à 46 px par un débord invisible
 (`::after { inset: -6px 0 }` — la bordure de 2 px en absorbe 2 de chaque côté).
-Icônes : 34 px, tap 46 px, sur fond `#27607e`.
+Icônes : 34 px, tap 46 px, sur fond `#27607e`. Le bandeau du compteur fait
+28 px visuels et **44 px de zone de tap**, par le même débord invisible.
 
-Le compteur à rails n'est **pas collé au bord haut** : la plaque mesure 60 px
-bordures comprises et se pose 40 px sous le haut de la bande, pour que le ciel,
-les maisons et les platanes se voient au-dessus d'elle et le sol de la place
-derrière. Les crans 1-13 gardent leur corps de 10 px : c'est la lisibilité qui
-commande la hauteur des rails, jamais l'inverse.
+Le compteur n'est **pas collé au bord haut** : le ciel, les maisons et les
+platanes se voient au-dessus du bandeau et le sol de la place derrière. Les
+crans gardent leur corps de 10 px : c'est la lisibilité qui commande la hauteur
+des rails, jamais l'inverse. Le rail va de 0 au nombre de points choisi (5, 9
+ou 13), pas toujours à 13.
 
 Messages passagers : plaque émaillée, sur le terrain comme ailleurs.
 

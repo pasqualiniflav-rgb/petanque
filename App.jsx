@@ -22,10 +22,14 @@ const VIEW_H = 520 + HAUT_VUE + HORS_B;
 // bande de sable hors-jeu où se plantent les poteaux du panneau. Elle a son
 // PROPRE canvas, en pixels CSS 1:1, hors du canvas du terrain : le sol ne
 // défile donc jamais sous les pieds du panneau, et les cotes des maquettes
-// s'appliquent au pixel près. Portée de 118 à 130 px pour que le compteur,
-// descendu et rétréci, laisse voir le ciel, les maisons et les platanes
-// au-dessus de lui et le sol de la place derrière.
-const BANDE_H = 130;
+// s'appliquent au pixel près. Le compteur n'y met plus qu'un BANDEAU REPLIÉ
+// (28 px à deux équipes, 44 px à trois) : la plaque complète s'ouvre en
+// surimpression sur le terrain, jamais en le poussant. La bande peut donc
+// redescendre à 104 px, et le village reste visible au-dessus du bandeau.
+const BANDE_H = 104;
+// Le bandeau est calé par le BAS, pour que les poteaux gardent la même
+// longueur qu'on soit à deux ou à trois équipes.
+const BANDEAU_BAS = 70;
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
 export function reglerLargeurVue(w) {
   // Vers le haut, pas un pixel de côté ; sur un téléphone étroit la fenêtre
@@ -41,7 +45,9 @@ const TEAMS = ["A", "B", "C"];
 const TEAM_COLORS = { A: "#2ba3d4", B: "#bd4f3a", C: "#7f9f78" }; // sauge
 const TEAM_NAMES = { A: "Équipe ciel", B: "Équipe rouge", C: "Équipe sauge" };
 const CRIS = ["Oh peuchère !", "Tè, vé !", "Oh fan de chichourle !", "Boudiou !", "Adieu vat !"];
-const TARGET = 13;
+const CIBLES = [5, 9, 13];       // points pour gagner, au choix de l'hôte
+const TARGET = 13;               // valeur par défaut
+const cibleDe = st => (CIBLES.includes(st?.cible) ? st.cible : TARGET);
 const POLL_MS = 4000; // simple roue de secours : le flux temps réel fait le travail
 const TEMPS_LANCER = 20; // secondes par lancer
 const TEMPS_TOURNEE = 20; // secondes pour choisir à qui offrir la tournée
@@ -622,6 +628,7 @@ function normalize(st) {
   st.lastTournee = st.lastTournee || null;
   st.streak = st.streak || null;
   st.terrain = st.terrain || "classique";
+  st.cible = CIBLES.includes(st.cible) ? st.cible : TARGET; // points pour gagner
   if (st.mene) {
     st.mene.boules = st.mene.boules || [];
     st.mene.left = st.mene.left || {};
@@ -701,7 +708,7 @@ function dessinerDecorStylise(cx, W, H) {
   // soleil — se cale dessus et non sur la hauteur totale de la bande. Le
   // village reste donc entièrement VISIBLE au-dessus de la plaque, qui est
   // posée plus bas, et le sol de la place passe derrière elle.
-  const G = Math.round(H * 0.308);
+  const G = Math.round(H * 0.30);
   const ech = G / 66; // les platanes rapetissent avec la place qu'on leur laisse
 
   const ciel = cx.createLinearGradient(0, 0, 0, H);
@@ -1465,18 +1472,20 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
     const mx = VIEW_W - mw - Math.round(VIEW_W * (8 / 390)), my = Math.round(VIEW_H * (14 / 636));
     const sx = mw / T.W, sy = mh / T.L;
     ctx.save();
-    ctx.globalAlpha = 0.94;
-    ctx.fillStyle = "#cdb98f";
+    // Plaquette de bois de la charte : sur le sable, le sable clair de la
+    // maquette ne se voyait pas — d'où le « rectangle blanc ». Le bois
+    // contraste, et les pastilles d'équipe s'y lisent comme sur le fronton.
+    ctx.fillStyle = "#a87d4b";
     ctx.fillRect(mx, my, mw, mh);
-    ctx.strokeStyle = "#efe6cf"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(mx - 0.75, my - 0.75, mw + 1.5, mh + 1.5);
-    // la zone où le cochonnet est valable, cadre crème
+    ctx.strokeStyle = "#7a5a35"; ctx.lineWidth = 2;
+    ctx.strokeRect(mx - 1, my - 1, mw + 2, mh + 2);
+    // la zone où le cochonnet est valable, gravée en creux
     const zy0 = my + (T.L - 30 - T.cochMin * 1.5) * sy;
     const zy1 = my + (T.L - 30 - T.cochMin) * sy;
-    ctx.strokeStyle = "#f2ecdc"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(mx + 4, zy0, mw - 8, zy1 - zy0);
+    ctx.fillStyle = "rgba(74,47,22,0.22)";
+    ctx.fillRect(mx + 3, zy0, mw - 6, zy1 - zy0);
     if (aim) { // direction du lancer (jamais la distance)
-      ctx.strokeStyle = "rgba(107,87,58,0.7)"; ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(74,47,22,0.75)"; ctx.lineWidth = 2;
       const rad = (aim.angle * Math.PI) / 180;
       ctx.beginPath();
       ctx.moveTo(mx + START.x * sx, my + START.y * sy);
@@ -1484,17 +1493,27 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
                  my + (START.y - Math.cos(rad) * T.L * 0.08) * sy);
       ctx.stroke();
     }
+    // le cercle de lancer, pour savoir où l'on se tient
+    ctx.strokeStyle = "rgba(255,240,214,0.5)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(mx + START.x * sx, my + START.y * sy, 3, 0, Math.PI * 2); ctx.stroke();
+    // boules et cochonnet : liseré brun brûlé, lisibles sur le bois
     for (const b of list) {
       if (b.dead) continue;
-      ctx.fillStyle = b.kind === "coch" ? "#c67f1e" : TEAM_COLORS[b.team];
+      const coch = b.kind === "coch";
       ctx.beginPath();
-      ctx.arc(mx + b.x * sx, my + b.y * sy, 2.5, 0, Math.PI * 2);
+      ctx.arc(mx + b.x * sx, my + b.y * sy, coch ? 3.2 : 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = coch ? "#f6c324" : TEAM_COLORS[b.team];
       ctx.fill();
+      ctx.strokeStyle = "#4a2f16"; ctx.lineWidth = 1.2; ctx.stroke();
     }
-    // le cadre de vue : où regarde la caméra en ce moment
-    ctx.strokeStyle = "#26200c"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(mx + (cam.x - VIEW_W / 2) * sx, my + (cam.y - VIEW_H / 2) * sy,
-                   VIEW_W * sx, VIEW_H * sy);
+    // Le cadre de vue : où regarde la caméra. Borné à la plaquette — il
+    // débordait dès que la caméra butait sur un bord.
+    const vx0 = Math.max(mx + 1, mx + (cam.x - VIEW_W / 2) * sx);
+    const vy0 = Math.max(my + 1, my + (cam.y - VIEW_H / 2) * sy);
+    const vx1 = Math.min(mx + mw - 1, mx + (cam.x + VIEW_W / 2) * sx);
+    const vy1 = Math.min(my + mh - 1, my + (cam.y + VIEW_H / 2) * sy);
+    ctx.strokeStyle = "#f2ecdc"; ctx.lineWidth = 2;
+    ctx.strokeRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
     ctx.restore();
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1525,6 +1544,9 @@ const CSS_BASE = `
 .bp.bj{box-shadow:0 2px 0 ${NUIT}}
 .bs.bj{box-shadow:0 2px 0 rgba(29,58,79,.6)}
 .bj::after{content:'';position:absolute;inset:-6px 0}/* 38 + 2x4 = 46 px de tap */
+.cpt{position:relative}
+.cpt::after{content:'';position:absolute;inset:-11px 0}/* 28 + 2x8 = 44 px de tap */
+@keyframes ouvrirPlaque{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .bj:active{transform:translateY(2px);box-shadow:none}
 .bp.bj:disabled:active{transform:none;box-shadow:0 2px 0 ${NUIT}}
 .bs.bj:disabled:active{transform:none;box-shadow:0 2px 0 rgba(29,58,79,.6)}
@@ -1739,7 +1761,7 @@ function PanneauAide({ fermer, revoirGeste }) {
       <div style={{ ...S.plaque, maxWidth: 400, gap: 10 }} onClick={e => e.stopPropagation()}>
         <h2 style={S.plaqueTitre}>PÉTANQUE ! — LES RÈGLES EN DEUX MINUTES</h2>
         {section("Le but",
-          `Le premier à ${TARGET} points gagne. À chaque mène, l'équipe qui a la boule
+          `Le premier au nombre de points choisi gagne (5, 9 ou 13). À chaque mène, l'équipe qui a la boule
            la plus proche du cochonnet marque un point par boule mieux placée que la
            meilleure boule adverse.`)}
         {section("Une mène",
@@ -1800,6 +1822,15 @@ export default function Petanque() {
   const [, setTic] = useState(0); // horloge du compte à rebours
   const [decorPret, setDecorPret] = useState(0); // photo de décor arrivée
   const [niveauBot, setNiveauBot] = useState("pointeur");
+  // Le panneau de réglages s'ouvre et se ferme, et il est fermé en arrivant :
+  // les valeurs par défaut suffisent à lancer une partie sans jamais l'ouvrir.
+  const [reglagesOuverts, setReglagesOuverts] = useState(false);
+  // Le compteur : bandeau replié en jeu, plaque complète en surimpression.
+  // `plaque` vaut null, "score" (ouverture automatique 2 s en fin de mène)
+  // ou "clic" (le joueur l'a ouverte, elle reste jusqu'à ce qu'il la ferme).
+  const [plaque, setPlaque] = useState(null);
+  const [scoresAvant, setScoresAvant] = useState(null); // pour faire grimper le jeton
+  const scoresVusRef = useRef(null);
   const [aide, setAide] = useState(false);
   const [cri, setCri] = useState(null); // cris du Sud et annonces de tournée, même bandeau
   // Le cri s'efface tout seul : minuteur porté par un ref, jamais annulé
@@ -2243,6 +2274,25 @@ export default function Petanque() {
     drawField(cv.getContext("2d"), game, gel ? gel.bodies : null, visee, ivresseNiveau, T);
   }, [game, angle, myTurn, animating, screen, ivresseNiveau, T, decorPret, gel, geste, curseurs, largeurVue, peutLancer]);
 
+  // Fin de mène : la plaque complète s'ouvre deux secondes, le jeton grimpe
+  // jusqu'à son nouveau cran, puis elle se referme. Même composant que le
+  // clic sur le bandeau — un seul panneau à maintenir.
+  const cleScores = game ? TEAMS.map(t => game.scores?.[t] || 0).join("-") : "";
+  useEffect(() => {
+    if (!game || game.phase !== "playing") { scoresVusRef.current = cleScores; return; }
+    if (scoresVusRef.current === null || scoresVusRef.current === undefined) {
+      scoresVusRef.current = cleScores; return; // première vue : rien à annoncer
+    }
+    if (scoresVusRef.current === cleScores) return;
+    const avant = scoresVusRef.current.split("-").map(Number);
+    scoresVusRef.current = cleScores;
+    setScoresAvant(Object.fromEntries(TEAMS.map((t, i) => [t, avant[i] || 0])));
+    setPlaque("score");
+    const monte = setTimeout(() => setScoresAvant(null), 90); // le jeton grimpe
+    const ferme = setTimeout(() => setPlaque(p => (p === "score" ? null : p)), 2200);
+    return () => { clearTimeout(monte); clearTimeout(ferme); };
+  }, [cleScores, game?.phase]);
+
   // --- entrée -----------------------------------------------------
   async function join(codeForce) {
     const n = name.trim(), c = (typeof codeForce === "string" ? codeForce : code).trim().toUpperCase();
@@ -2253,7 +2303,8 @@ export default function Petanque() {
       g = normalize({
         rev: 0, phase: "lobby", players: [], scores: { A: 0, B: 0, C: 0 },
         drinks: { A: 0, B: 0, C: 0 }, terrain: "classique",
-        boulesEach: 2, mene: null, winner: null, lastResult: null,
+        boulesEach: 3, cible: TARGET, sansTournee: true, sansCris: true,
+        mene: null, winner: null, lastResult: null,
       });
     }
     const existing = g.players.find(p => p.name.toLowerCase() === n.toLowerCase());
@@ -2343,6 +2394,7 @@ export default function Petanque() {
   const setSansTournee = v => mutate(g => { g.sansTournee = !!v; });
   const setSansCris = v => mutate(g => { g.sansCris = !!v; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
+  const setCible = n => mutate(g => { g.cible = n; });
 
   async function start() {
     const base = (await loadGame(code)) || game;
@@ -2491,7 +2543,7 @@ export default function Petanque() {
         st.streak = st.streak && st.streak.team === res.team
           ? { team: res.team, count: st.streak.count + 1 }
           : { team: res.team, count: 1 };
-        if (st.scores[res.team] >= TARGET) {
+        if (st.scores[res.team] >= cibleDe(st)) {
           st.phase = "finished"; st.winner = res.team;
         } else {
           newMene(st, res.team, st.mene.num + 1);
@@ -2648,7 +2700,8 @@ export default function Petanque() {
         {/* Toujours présent, grisé quand il n'y a rien à revoir : la barre ne
             bouge pas d'un pixel d'un coup à l'autre */}
         {enPartie && (() => {
-          const peutRevoir = !!game?.replay && !animating && !gel;
+          const peutRevoir = !!game?.replay && !animating && !gel
+            && game?.phase === "playing" && !!canvasRef.current;
           return (
             <button className={cl + (peutRevoir ? "" : " eteint")} aria-label="Revoir le coup" title="Revoir le coup"
                     disabled={!peutRevoir}
@@ -2761,6 +2814,18 @@ export default function Petanque() {
         ))}
         {isHost && (
           <div style={S.plaque}>
+            <button className="bs" style={S.replier} aria-expanded={reglagesOuverts}
+                    onClick={() => setReglagesOuverts(v => !v)}>
+              <span>RÉGLAGES DE LA PARTIE</span>
+              <span style={{ ...S.chevron, transform: reglagesOuverts ? "rotate(180deg)" : "none" }}>▾</span>
+            </button>
+            {!reglagesOuverts && (
+              <p style={S.note}>
+                {game.boulesEach} boule{game.boulesEach > 1 ? "s" : ""} · {cibleDe(game)} points · terrain {terrainDe(game).nom.toLowerCase()}
+                {game.sansTournee ? " · sans tournée" : " · avec tournée"}
+              </p>
+            )}
+            {reglagesOuverts && (<>
             <label style={S.etiquette}>BOULES PAR JOUEUR</label>
             <div style={S.rangee}>
               {[1, 2, 3].map(n => (
@@ -2768,6 +2833,12 @@ export default function Petanque() {
               ))}
             </div>
             <p style={S.note}>Équipes inégales ? Le total de boules par équipe est équilibré tout seul.</p>
+            <label style={S.etiquette}>POINTS POUR GAGNER</label>
+            <div style={S.rangee}>
+              {CIBLES.map(n => (
+                <button key={n} className={cibleDe(game) === n ? "bp" : "bs"} style={S.segment} onClick={() => setCible(n)}>{n}</button>
+              ))}
+            </div>
             <label style={S.etiquette}>NIVEAU DES BOTS</label>
             <div style={S.rangee}>
               {ORDRE_BOTS.map(k => (
@@ -2790,6 +2861,7 @@ export default function Petanque() {
                 <button key={k} className={(game.terrain || "classique") === k ? "bp" : "bs"} style={S.segment} onClick={() => setTerrain(k)}>{tt.nom.toUpperCase()}</button>
               ))}
             </div>
+            </>)}
             <button className="bp" style={{ marginTop: 6 }} onClick={start}>LANCER LA PARTIE</button>
           </div>
         )}
@@ -2826,18 +2898,24 @@ export default function Petanque() {
     : (!animating && !gel) ? resteTemps : null;
   const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#4b6a44" }; // lisibles sur le bois
   const trois = equipes.length > 2;
-  // Rails resserrés : 15 px de haut, à 4 px puis 21 px du haut. Les chiffres
-  // gardent leur corps de 10 px — c'est la lisibilité des crans qui commande.
-  const railH = trois ? 11 : 15, railPas = trois ? 14 : 17, railTop = trois ? 3 : 4;
+  // La plaque ouverte a de la place : rails de 18 px à deux équipes, 14 à
+  // trois. Le rail va de 0 au nombre de points choisi, pas toujours à 13.
+  const cible = cibleDe(game);
+  const crans = cible + 1;
+  const railH = trois ? 14 : 18, railPas = trois ? 18 : 22, railTop = 6;
+  // Pendant l'ouverture automatique, le jeton part du score précédent puis
+  // grimpe : c'est la transition CSS de S.jeton qui fait le mouvement.
+  const scoreDe = t => Math.max(0, Math.min(cible, (scoresAvant ? scoresAvant[t] : game.scores[t]) || 0));
   const rail = (t, i) => {
-    const sc = Math.max(0, Math.min(13, game.scores[t] || 0));
+    const sc = scoreDe(t);
     return (
       <div key={t} style={{ ...S.rail, top: railTop + i * railPas, height: railH }}>
-        {Array.from({ length: 14 }, (_, n) => (
+        {Array.from({ length: crans }, (_, n) => (
           <span key={n} style={{ ...S.railChiffre, visibility: n === sc ? "hidden" : "visible" }}>{n}</span>
         ))}
         {/* le jeton glisse le long du rail jusqu'à sa case (transition CSS) */}
-        <span style={{ ...S.jeton, width: trois ? 10 : 13, height: trois ? 10 : 13, background: TEAM_COLORS[t], left: `calc(3px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 6px))` }}>{sc}</span>
+        <span style={{ ...S.jeton, width: trois ? 13 : 16, height: trois ? 13 : 16, background: TEAM_COLORS[t],
+                       left: `calc(3px + ${((sc + 0.5) / crans).toFixed(5)} * (100% - 6px))` }}>{sc}</span>
       </div>
     );
   };
@@ -2866,29 +2944,84 @@ export default function Petanque() {
       {nomTour && <> · <span style={{ color: NOMS_GRAVES[turnPlayer.team] }}>{nomTour}</span></>}
     </span>
   );
-  // Panneau planté DANS la bande fixe de 118 px, aux cotes de maquette-jeu.html :
-  // plaque haute de 68 px posée à 8 px du haut, poteaux de 10 x 34 px à 28 %
-  // et 72 %, et sous chaque pied une ombre dure et courte de 34 x 5 px. Rien
-  // d'autre n'est dessiné là, et rien ne dépasse dans la fenêtre du terrain.
+  // Un groupe d'équipe du bandeau replié : jeton posé sur son score, boules
+  // restantes, verre de tournées. En miroir à droite, à deux équipes.
+  const capacite = t => game.players.filter(p => p.team === t).length * (game.boulesEach || 3);
+  const enPastilles = equipes.every(t => capacite(t) > 0 && capacite(t) <= 4);
+  const groupeEquipe = (t, sens) => {
+    const cap = capacite(t), reste = restantes(t);
+    return (
+      <span key={t} style={{ ...S.groupe, flexDirection: sens === "droite" ? "row-reverse" : "row" }}>
+        <span style={{ ...S.jetonBandeau, background: TEAM_COLORS[t] }}>{Math.min(cible, game.scores[t] || 0)}</span>
+        {game.mene && (enPastilles ? (
+          <span style={S.boulesPoints}>
+            {Array.from({ length: cap }, (_, i) => (
+              <span key={i} style={{ ...S.boulePoint, background: i < reste ? TEAM_COLORS[t] : "transparent" }} />
+            ))}
+          </span>
+        ) : (
+          <span style={S.boulesNombre}>
+            <span style={{ ...S.pastille, width: 7, height: 7, boxShadow: "0 0 0 1.2px #4a2f16", background: TEAM_COLORS[t] }} />
+            {reste}
+          </span>
+        ))}
+        {(game.drinks?.[t] || 0) > 0 && <span style={S.boulesNombre}>{verreGrave}{game.drinks[t]}</span>}
+      </span>
+    );
+  };
+
+  // LE BANDEAU REPLIÉ, dans la bande fixe : 28 px à deux équipes, 44 à trois.
+  // Il se clique pour ouvrir la plaque complète ; sa zone de tap fait 44 px
+  // par débord invisible, comme les boutons de jeu.
+  const hautBandeau = BANDEAU_BAS - (trois ? 50 : 34);
+  const bandeauCompteur = (
+    <div className="cpt" style={{ ...S.bandeauCompteur, top: hautBandeau, height: trois ? 44 : 28,
+                                  flexDirection: trois ? "column" : "row",
+                                  justifyContent: "center", gap: trois ? 0 : 8 }}
+         role="button" tabIndex={0} aria-label="Ouvrir le compteur"
+         onClick={() => setPlaque(p => (p ? null : "clic"))}>
+      {trois ? (
+        <>
+          <div style={S.rangeeGroupes}>{equipes.map(t => groupeEquipe(t, "gauche"))}</div>
+          <div style={S.ligneSous}>{ligneCentre}</div>
+        </>
+      ) : (
+        <>
+          {groupeEquipe(equipes[0], "gauche")}
+          <span style={S.centreBandeau}>{ligneCentre}</span>
+          {equipes[1] ? groupeEquipe(equipes[1], "droite") : <span style={S.groupe} />}
+        </>
+      )}
+    </div>
+  );
+
+  // Panneau planté dans la bande fixe : poteaux de 10 px à 28 % et 72 %, et
+  // sous chaque pied une ombre dure et courte de 34 x 5 px. Rien d'autre.
   const fronton = (
     <>
       <div style={{ ...S.plaqueOmbre, left: "28%" }} />
       <div style={{ ...S.plaqueOmbre, left: "72%" }} />
       <div style={{ ...S.poteau, left: "28%" }} />
       <div style={{ ...S.poteau, left: "72%" }} />
-      <div style={S.plaqueBois}>
+      {bandeauCompteur}
+    </>
+  );
+
+  // LA PLAQUE COMPLÈTE : même composant pour les deux déclencheurs (fin de
+  // mène ou clic). En SURIMPRESSION sur le terrain — elle ne le pousse
+  // jamais : le cercle de lancer ne bouge pas d'un pixel quand elle s'ouvre.
+  const hauteurPlaque = trois ? railTop + 3 * railPas + 16 : railTop + 2 * railPas + 16;
+  const plaqueComplete = plaque && (
+    <>
+      {plaque === "clic" && <div style={S.fondPlaque} onClick={() => setPlaque(null)} />}
+      <div style={{ ...S.plaqueOuverte, height: hauteurPlaque }}
+           onClick={() => plaque === "clic" && setPlaque(null)}>
         {equipes.map(rail)}
-        {trois ? (
-          <div style={{ ...S.bandeau, top: 43, fontSize: 10 }}>
-            {flanc(equipes[0], "gauche")}{flanc(equipes[1], "centre")}{flanc(equipes[2], "droite")}
-          </div>
-        ) : (
-          <div style={{ ...S.bandeau, top: 39 }}>
-            {flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}
-          </div>
-        )}
+        <div style={{ ...S.bandeau, top: hauteurPlaque - 13, fontSize: trois ? 10 : 11 }}>
+          {trois ? <>{flanc(equipes[0], "gauche")}{ligneCentre}{flanc(equipes[2], "droite")}</>
+                 : <>{flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}</>}
+        </div>
       </div>
-      {trois && <div style={S.microLigne}>{ligneCentre}</div>}
     </>
   );
 
@@ -2980,6 +3113,7 @@ export default function Petanque() {
               onPointerDown={surPointerDown} onPointerMove={surPointerMove}
               onPointerUp={surPointerUp} onPointerCancel={surPointerCancel} />
             {surimpressions}
+            {plaqueComplete}
           </div>
           <div style={{ ...S.commandes, height: curseurs ? "auto" : 44, paddingBottom: curseurs ? 6 : 0 }}>
             {/* Rangée de 44 px, boutons de 38 px visuels (maquette-jeu.html) ;
@@ -3086,6 +3220,9 @@ const styles = {
   etiquette: { fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: NUIT },
   note: { fontSize: 12, lineHeight: 1.4, margin: "-4px 0 0", color: NUIT, opacity: 0.75, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
   rangee: { display: "flex", gap: 8, alignItems: "stretch" },
+  // En-tête du panneau repliable : pleine largeur, 44 px de plancher tactile
+  replier: { width: "100%", minHeight: 44, padding: "0 12px", fontSize: 13, letterSpacing: 1.5, justifyContent: "space-between" },
+  chevron: { fontSize: 14, lineHeight: 1, transition: "transform .18s ease" },
   segment: { flex: 1, padding: "10px 6px", fontSize: 15, letterSpacing: 1, minHeight: 46 },
   large: { width: "100%", maxWidth: 390, boxSizing: "border-box" },
   outils: { display: "flex", justifyContent: "center", gap: 8, padding: "0 6px" },
@@ -3159,23 +3296,48 @@ const styles = {
   ligneCurseur: { display: "flex", alignItems: "center", gap: 8, minHeight: 32 },
   etiquetteCurseur: { fontSize: 11, fontWeight: 600, letterSpacing: 1.5, width: 78, flexShrink: 0 },
   // Le fronton du boulodrome
-  // La plaque de bois à rails, valeurs de maquette-scoreboard.html
-  plaqueBois: {
-    position: "absolute", top: 40, left: 10, right: 10, height: 54, zIndex: 3, boxSizing: "content-box",
+  // LE BANDEAU REPLIÉ, planté sur les poteaux dans la bande fixe
+  bandeauCompteur: {
+    position: "absolute", left: 10, right: 10, zIndex: 3, boxSizing: "border-box",
+    background: "linear-gradient(180deg, #c59a63, #a87d4b)",
+    border: "3px solid #7a5a35", borderRadius: 6,
+    boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4)",
+    color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
+    display: "flex", alignItems: "center", gap: 8, padding: "0 8px",
+    cursor: "pointer", userSelect: "none", WebkitTapHighlightColor: "transparent",
+  },
+  rangeeGroupes: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" },
+  ligneSous: { display: "flex", justifyContent: "center", width: "100%", marginTop: 1 },
+  groupe: { display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 700, color: "#4a2f16" },
+  centreBandeau: { flex: 1, display: "flex", justifyContent: "center", minWidth: 0, overflow: "hidden" },
+  jetonBandeau: {
+    width: 20, height: 20, borderRadius: "50%", flexShrink: 0, color: "#ffffff",
+    fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center",
+    boxShadow: "0 0 0 1.5px #4a2f16",
+  },
+  boulesPoints: { display: "flex", gap: 3, alignItems: "center" },
+  boulePoint: { width: 7, height: 7, borderRadius: "50%", boxShadow: "0 0 0 1.2px #4a2f16" },
+  boulesNombre: { display: "flex", alignItems: "center", gap: 2 },
+  // LA PLAQUE COMPLÈTE, en surimpression sur le terrain — jamais dans le flux
+  plaqueOuverte: {
+    position: "absolute", top: 6, left: 6, right: 6, zIndex: 6, boxSizing: "content-box",
     background: "repeating-linear-gradient(180deg, rgba(122, 90, 53, 0.14) 0 3px, rgba(0, 0, 0, 0) 3px 14px), linear-gradient(180deg, #c59a63, #a87d4b)",
     border: "3px solid #7a5a35", borderRadius: 8,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
     color: "#4a2f16", fontFamily: "'Oswald', sans-serif",
+    animation: "ouvrirPlaque .18s ease-out both",
   },
+  // Ferme la plaque au clic ailleurs, quand c'est le joueur qui l'a ouverte
+  fondPlaque: { position: "absolute", inset: 0, zIndex: 5 },
   // Poteaux : bois foncé contrasté, 10 x 34 px, plantés à 28 % et 72 %
   poteau: {
-    position: "absolute", top: 92, width: 10, height: 34, marginLeft: -5, zIndex: 2,
+    position: "absolute", top: 64, width: 10, height: 26, marginLeft: -5, zIndex: 2,
     background: "linear-gradient(90deg, #8a6540, #6b4e30)", borderRadius: 2,
   },
   // Ombre de la charte : DURE et COURTE, un simple trait sous chaque pied.
   // 34 x 5 px, jamais une barre qui traverse le terrain.
   plaqueOmbre: {
-    position: "absolute", top: 124, width: 34, height: 5, marginLeft: -17, zIndex: 1,
+    position: "absolute", top: 88, width: 34, height: 5, marginLeft: -17, zIndex: 1,
     borderRadius: 3, background: "rgba(70, 55, 30, 0.28)",
   },
   rail: {
@@ -3192,7 +3354,6 @@ const styles = {
   bandeau: { position: "absolute", left: 12, right: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },
   flanc: { flex: 1, display: "flex", alignItems: "center", gap: 3, minWidth: 0 },
   graveCentre: { flex: "0 0 auto", fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", whiteSpace: "nowrap" },
-  microLigne: { position: "absolute", top: 102, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif", color: "#4a2f16" },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",

@@ -200,6 +200,22 @@ Maquettes `maquette-jeu.html` et `maquette-terrain-long.html` remplacées par Fl
 
 Vérifié à 390 × 844 et à 360 × 740, sur les deux terrains. Physique non touchée : six bancs au vert.
 
+## 🧰 Lot 0 bis — réglages de partie et finitions *(mission révision 4)*
+
+| # | Item | État |
+|---|------|------|
+| B.1 | **Points pour gagner** : 5, 9 ou 13, 13 par défaut. `TARGET` en dur remplacé par `cibleDe(st)`, la victoire s'y réfère, et **le rail ne va plus toujours à 13** : il compte de 0 au nombre choisi. Vérifié en partie : victoire déclenchée à 5 | ✅ |
+| B.2 | **Défauts de l'écran de création** conformes au tableau de la mission : 3 boules, 13 points, bots Pointeur, sans tournée, sans cris, terrain classique. Mesuré au chargement | ✅ |
+| B.3 | **Panneau de réglages repliable, fermé à l'arrivée.** En-tête de 44 px et résumé d'une ligne quand il est fermé, pour lancer une partie sans jamais l'ouvrir | ✅ |
+| B.4 | **« Revoir le coup » à l'écran de fin** : il était actif et inerte. Cause trouvée : le canvas du terrain n'est pas monté sur l'écran de fin, donc `lancerAnimationReplay` sortait immédiatement. Grisé, même règle que la barre d'icônes (`#ddd6c1` / `#8a8f96`, opacité .75) | ✅ |
+| B.5 | **Le rectangle blanc des terrains 10 m identifié** : c'est bien la mini-carte. Trois causes cumulées — un fond `#cdb98f` posé sur du sable `#d8c49a`, soit 11 unités d'écart par canal ; des pastilles de 2,5 px ; et en début de mène **un seul point à afficher**. Réparée plutôt que supprimée : plaquette de bois de la charte, liseré brun brûlé sur les boules, cochonnet en jaune pastis, cercle de lancer marqué, cadre de vue crème **borné à la plaquette** (il débordait dès que la caméra butait sur un bord) | ✅ |
+| B.6 | **Compteur replié en jeu, plaque complète en surimpression.** Bandeau de 28 px à deux équipes, 44 px à trois, un seul composant pour les deux déclencheurs — fin de mène (2 s, le jeton grimpe) et clic sur le bandeau (reste ouvert). Bande fixe 130 → 104 px, **terrain 624 → 650 px (+26)**. La plaque ne pousse pas le terrain : cercle de lancer mesuré identique, écart 0,00 px. Zone de tap du bandeau mesurée à 44 px | ✅ |
+| B.7 | Pause et reprise partagées | ⏸ **en attente de validation** |
+
+Ordre d'affichage des équipes : **ciel, rouge, sauge**, fixé par `TEAMS` et filtré par `activeTeams`. Couleur de la sauge dans le jeu : **`#7f9f78`**, et non le `#6d9a4e` de la maquette.
+
+Vérifié à 390 × 844 et 360 × 740, à deux et à trois équipes, sur les deux terrains. Physique non touchée : six bancs au vert.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
