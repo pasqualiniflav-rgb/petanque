@@ -1492,7 +1492,7 @@ const CSS_BASE = `
 .bs.creux{background:transparent}
 .bi{width:40px;height:40px;background:${CREME};border:2px solid ${NUIT};border-radius:4px;box-shadow:0 3px 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;color:${NUIT};font-size:18px;font-weight:700}
 .bi.g{width:46px;height:46px;font-size:20px}
-.bi.p{width:36px;height:36px;font-size:16px}
+.bi.p{width:38px;height:38px;font-size:17px}
 .bi.off svg{opacity:.35}
 .bi.eteint{background:#ddd6c1;border-color:#8a8f96;box-shadow:0 3px 0 rgba(138,143,150,.5);cursor:default}
 .bi.eteint:active{transform:none;box-shadow:0 3px 0 rgba(138,143,150,.5)}
@@ -1799,8 +1799,11 @@ export default function Petanque() {
   // et à chaque changement de taille
   const cadreRef = useRef(null);
   const [largeurVue, setLargeurVue] = useState(VIEW_W);
-  const [echelleVue, setEchelleVue] = useState(1); // pixels écran par unité de canvas
-  const [largeurBoite, setLargeurBoite] = useState(390);
+  // Géométrie de l'image dans sa boîte : même calcul que posCanvas (object-fit
+  // contain, calée en bas). Sans le décalage, tout DOM aligné sur une ligne du
+  // canvas se trompe de la hauteur du letterbox — et les pieds des poteaux
+  // tombent dans le terrain qui défile.
+  const [vueBoite, setVueBoite] = useState({ k: 1, dy: 0, largeur: 390 });
   useEffect(() => {
     const el = cadreRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1809,8 +1812,9 @@ export default function Petanque() {
       if (bw < 10 || bh < 10) return;
       const w = (CANVAS_H * bw) / bh;
       if (reglerLargeurVue(w)) setLargeurVue(VIEW_W);
-      setEchelleVue(bh / CANVAS_H);
-      setLargeurBoite(bw);
+      const k = Math.min(bw / VIEW_W, bh / CANVAS_H);
+      setVueBoite(v => (v.k === k && v.dy === bh - CANVAS_H * k && v.largeur === bw)
+        ? v : { k, dy: bh - CANVAS_H * k, largeur: bw });
     };
     mesurer();
     const ro = new ResizeObserver(mesurer);
@@ -2819,11 +2823,11 @@ export default function Petanque() {
   const hautPlaque = 6;
   // Les pieds se posent dans la bande de sable au bas du décor — une bande
   // FIXE : le sol ne défile jamais sous le panneau, même caméra en marche
-  const basBandeFixe = Math.round(SKY_H * echelleVue);
+  const basBandeFixe = Math.round(vueBoite.dy + SKY_H * vueBoite.k);
   const basPlaque = hautPlaque + 76;
   const pieds = Math.max(basPlaque + 28, basBandeFixe - 6);
   const hautPoteaux = basPlaque - 6;
-  const largeurPlaque = largeurBoite - 28;
+  const largeurPlaque = vueBoite.largeur - 28;
   const fronton = (
     <>
       <div style={{ ...S.plaqueOmbre, top: pieds - 2, left: 14 + 0.28 * largeurPlaque - 42, width: 84 }} />
@@ -2933,7 +2937,7 @@ export default function Petanque() {
           <div style={{ ...S.commandes, height: curseurs ? 156 : 52 }}>
             {/* Rangée de 52 px, boutons de 44 px (maquette-jeu.html). Pendant la
                 phase du cochonnet, un seul bouton à la place de la paire. */}
-            <div style={S.rangee}>
+            <div style={{ ...S.rangee, gap: 6 }}>
               {cochToThrow ? (
                 <button className="bp" disabled={!peutLancer} style={S.boutonJeu} onClick={() => curseurs && throwBoule()}>LANCER LE COCHONNET</button>
               ) : (
@@ -3040,10 +3044,12 @@ const styles = {
   equipeTete: { display: "flex", alignItems: "center", gap: 8 },
   equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
   puces: { display: "flex", flexWrap: "wrap", gap: 6 },
-  // L'ardoise : bande opaque, texte crème, une ligne
+  // Le bandeau d'information de la charte, hors partie : bande opaque pleine
+  // largeur, texte crème, une ligne. Aucune pastille sombre arrondie.
   ardoise: {
     background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 500, letterSpacing: 0.5,
-    padding: "7px 12px", textAlign: "center", borderRadius: 4, boxSizing: "border-box",
+    padding: "7px 12px", textAlign: "center", boxSizing: "border-box",
+    width: "100%", maxWidth: 390,
   },
   // Bandeau d'information de la charte : bande ardoise opaque, pleine largeur,
   // collée au bas du terrain — jamais flottante au milieu, jamais sur le panneau

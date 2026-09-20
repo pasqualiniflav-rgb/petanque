@@ -147,6 +147,22 @@ L'item « scoreboard » (B4 du sprint mobile, B3 polish, A1 affinage) est **ferm
 | C9 | Salon : « Cris du Sud » Avec/Sans, actifs par défaut ; Sans coupe les cris de prise de point | ✅ |
 | C10 | Messages legacy sur fond noir translucide : aucun ne subsistait (vérifié) ; messages passagers en ardoise opaque de la charte | ✅ |
 
+## 🔩 Sprint retouches II — tir, bande fixe, interface
+
+| # | Item | État |
+|---|------|------|
+| A1 | Tir à vide (3e récidive) : **instrumenté avant correction**. La distance était bonne (74 px classique, 183 long) mais la glisse durait 0,33 s / 0,42 s contre 2,3 s pour un pointé — c'était la durée, pas la distance. Cause : `corpsLance` posait `mu: muTir` dès la création et `stepPhysics` faisait `b.mu \|\| muRoll`, sans transition — une boule tirée n'atteignait jamais le roulement du terrain ; et `muTir` valait 0,8, **exactement `skidMu`** : la constante du carreau freinait aussi les boules qui ne frappent rien | ✅ |
+| A2 | Trois régimes distincts : `muChute` (morsure à l'atterrissage, valeur inchangée), `muRoll` (roulé sous `vRoule`), `skidMu` (dérapage posé par un choc, sans sortie en roulé — le carreau reste sec). `airTir` s'ajuste à la nouvelle glisse : la règle d'or tient. Mesuré : 89 px en 0,77 s (classique), 206 px en 0,67 s (long). Déterminisme vérifié à deux navigateurs, recalcul hors navigateur identique au bit près (115 images) | ✅ |
+| B2 | Poteaux allongés (~32 px visibles), épaissis à 10 px, bois foncé contrasté | ✅ |
+| B3 | Ombre de la plaque : dure et courte, plus de halo radial diffus | ✅ |
+| C4 | Visée depuis le cercle : pendant toute la phase de visée la caméra s'ancre sur le cercle de lancer (`aim` couvre désormais la phase entière, pas seulement le glissé) ; dès le relâcher elle suit la boule. Mini-carte inchangée | ✅ |
+| C5 | Bande fixe : la bande de décor passe de 84 à 112 unités et reçoit un tablier de sable hors-jeu où se plantent les poteaux — le sol ne défile plus jamais sous le panneau. Village descendu pour rester visible sous la plaque | ✅ |
+| C5b | Alignement DOM/canvas : `echelleVue` ignorait le letterbox d'`object-fit`, les pieds pouvaient tomber dans le terrain selon la géométrie. Remplacé par la même échelle et le même décalage que le geste (`vueBoite`) | ✅ |
+| D6 | POINTER / TIRER : 44 px dans une rangée de 52 px, police 15 px, gap 6, sans padding vertical (cotes de maquette-jeu.html) | ✅ |
+| D7 | Barre d'icônes stable : « Revoir » toujours présent, grisé quand indisponible (#ddd6c1 / #8a8f96) ; boutons à 38 px | ✅ |
+| D8 | Phase cochonnet : un unique bouton jaune « LANCER LE COCHONNET », engrenage conservé à droite ; retour à la paire dès la première boule | ✅ |
+| D9 | Toast noir supprimé du code : `ardoiseFlottante` (posée à `top: 62`, donc **en plein sur la plaque**) et la pastille sombre arrondie `ardoise` remplacées par le bandeau de charte — bande opaque pleine largeur collée au bas du terrain | ✅ |
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |
