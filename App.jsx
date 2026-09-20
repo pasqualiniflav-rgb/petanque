@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { FIGURES, ORDRE_FIGURES, COUVRE_CHEFS, ORDRE_CHEFS, POLOS, ORDRE_POLOS, Portrait, figureValide } from "./figures.jsx";
 
 // ------------------------------------------------------------------
 // Pétanque en ligne — jusqu'à 9 joueurs (3 équipes), temps réel.
@@ -146,6 +147,39 @@ export function expirerPause(st, niveau) {
   return true;
 }
 
+// --- Les figures du village (lot 1) ------------------------------
+// Le numéro est un IDENTIFIANT, pas une décoration : c'est lui qui
+// distingue deux joueurs qui ont pris la même figure. Unique dans la partie.
+export function numeroLibre(st, sauf) {
+  const pris = new Set(st.players.filter(p => p.id !== sauf).map(p => p.fig?.num).filter(Boolean));
+  for (let n = 1; n <= 9; n++) if (!pris.has(n)) return n;
+  return null;
+}
+export function numeroDisponible(st, n, sauf) {
+  if (!Number.isInteger(n) || n < 1 || n > 9) return false;
+  return !st.players.some(p => p.id !== sauf && p.fig?.num === n);
+}
+// Deux joueurs de la MÊME équipe avec la MÊME figure doivent porter des
+// couvre-chefs différents : sinon rien ne les distingue de dos sur le
+// terrain. On renvoie le chef imposé, ou null si le choix passe tel quel.
+export function chefImpose(st, joueurId, team, nomFig, chefVoulu) {
+  const memes = st.players.filter(p => p.id !== joueurId && p.team === team && p.fig?.nom === nomFig);
+  if (!memes.length) return null;
+  const pris = new Set(memes.map(p => p.fig.chef));
+  if (!pris.has(chefVoulu)) return null;
+  return ORDRE_CHEFS.find(c => !pris.has(c)) || null;
+}
+// Figure par défaut à l'entrée : une figure et un chef qui ne recopient pas
+// ceux d'un coéquipier, et le premier numéro libre.
+export function figureParDefaut(st, joueurId, team) {
+  const dejaEquipe = st.players.filter(p => p.id !== joueurId && p.team === team).map(p => p.fig?.nom);
+  const nom = ORDRE_FIGURES.find(f => !dejaEquipe.includes(f)) || ORDRE_FIGURES[st.players.length % 9];
+  const chef = ORDRE_CHEFS[st.players.length % ORDRE_CHEFS.length];
+  const polo = ORDRE_POLOS[st.players.length % ORDRE_POLOS.length];
+  const impose = chefImpose(st, joueurId, team, nom, chef);
+  return { nom, chef: impose || chef, polo, num: numeroLibre(st, joueurId) || 1 };
+}
+
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
 const departDe = T => ({ x: T.W / 2, y: T.L - 30 });
 
@@ -214,7 +248,7 @@ export function scoreMene(st) {
 // engagée et attend la mène suivante pour recevoir ses boules — sinon il
 // entrerait au milieu d'une mène avec un compte de boules bancal.
 // Renvoie null si toutes les équipes ouvertes sont au complet.
-function ajouterJoueur(st, nom) {
+export function ajouterJoueur(st, nom) {
   const enCours = st.phase !== "lobby";
   const engagees = enCours && activeTeams(st).length ? activeTeams(st) : TEAMS;
   const compte = t => st.players.filter(p => p.team === t).length;
@@ -226,6 +260,7 @@ function ajouterJoueur(st, nom) {
   for (let i = 2; pris.has(name.toLowerCase()); i++) name = `${nom} ${i}`;
   const p = { id: "p" + Date.now() + Math.floor(Math.random() * 1000), name, team };
   st.players.push(p);
+  p.fig = figureParDefaut(st, p.id, team); // figure, chef et numéro libres
   if (st.mene) st.mene.left[p.id] = 0; // ses boules arrivent à la mène suivante
   return p;
 }
@@ -680,6 +715,17 @@ function normalize(st) {
   // { par: id du joueur, tour: clé du tour } — jamais d'horodatage : chaque
   // appareil mesure la pause à sa propre horloge, comme il mesure le tour.
   st.pause = st.pause && st.pause.par ? { par: st.pause.par, tour: st.pause.tour || "" } : null;
+  // Chaque joueur porte sa figure DANS L'ÉTAT DE PARTIE — jamais dans le
+  // navigateur : l'invité la rechoisit à chaque partie, c'est délibéré.
+  for (const p of st.players) {
+    if (!figureValide(p.fig) || !Number.isInteger(p.fig.num)) p.fig = figureParDefaut(st, p.id, p.team);
+  }
+  // Un numéro en double ne doit jamais survivre à une reprise d'état
+  const vus = new Set();
+  for (const p of st.players) {
+    if (vus.has(p.fig.num)) p.fig.num = numeroLibre(st, p.id) || p.fig.num;
+    vus.add(p.fig.num);
+  }
   if (st.mene) {
     st.mene.boules = st.mene.boules || [];
     st.mene.left = st.mene.left || {};
@@ -1595,6 +1641,9 @@ const CSS_BASE = `
 .bp.bj{box-shadow:0 2px 0 ${NUIT}}
 .bs.bj{box-shadow:0 2px 0 rgba(29,58,79,.6)}
 .bj::after{content:'';position:absolute;inset:-6px 0}/* 38 + 2x4 = 46 px de tap */
+.fig{background:#faf6ea;border:2px solid ${NUIT};border-radius:6px;box-shadow:0 2px 0 rgba(29,58,79,.5);display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px 5px;cursor:pointer;min-height:92px;font-family:'Oswald',sans-serif}
+.fig.prise{background:${PASTIS};box-shadow:0 2px 0 ${NUIT}}
+.fig:active{transform:translateY(2px);box-shadow:none}
 .cpt{position:relative}
 .cpt::after{content:'';position:absolute;inset:-11px 0}/* 28 + 2x8 = 44 px de tap */
 @keyframes ouvrirPlaque{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
@@ -1878,6 +1927,7 @@ export default function Petanque() {
   // Le panneau de réglages s'ouvre et se ferme, et il est fermé en arrivant :
   // les valeurs par défaut suffisent à lancer une partie sans jamais l'ouvrir.
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
+  const [galerie, setGalerie] = useState(false); // choix de la figure
   // Le compteur : bandeau replié en jeu, plaque complète en surimpression.
   // `plaque` vaut null, "score" (ouverture automatique 2 s en fin de mène)
   // ou "clic" (le joueur l'a ouverte, elle reste jusqu'à ce qu'il la ferme).
@@ -2439,10 +2489,14 @@ export default function Petanque() {
     if (g.players.length >= 9 || g.players.filter(p => p.team === t).length >= 3) return;
     const pris = new Set(g.players.map(p => p.name));
     const prenom = PRENOMS_BOT.find(n => !pris.has(n)) || "Bot " + (g.players.length + 1);
-    g.players.push({
+    // Les bots piochent dans les mêmes figures et reçoivent un numéro par la
+    // même règle : rien ne doit trahir un bot.
+    const b = {
       id: "b" + Date.now() + Math.floor(Math.random() * 1000),
       name: prenom, team: t, bot: true, niveau: niveauBot,
-    });
+    };
+    g.players.push(b);
+    b.fig = figureParDefaut(g, b.id, t);
   });
 
   const retirerBot = id => mutate(g => { g.players = g.players.filter(p => p.id !== id); });
@@ -2504,6 +2558,32 @@ export default function Petanque() {
   const setSansCris = v => mutate(g => { g.sansCris = !!v; });
   const setTerrain = k => mutate(g => { g.terrain = k; });
   const setCible = n => mutate(g => { g.cible = n; });
+
+  // --- la figure ---------------------------------------------------
+  const changerFigure = (champ, valeur) => mutate(g => {
+    const p = g.players.find(x => x.id === meId);
+    if (!p) return;
+    const fig = { ...p.fig, [champ]: valeur };
+    if (champ === "nom" || champ === "chef") {
+      const impose = chefImpose(g, p.id, p.team, fig.nom, fig.chef);
+      if (impose) {
+        fig.chef = impose;
+        setNotice(`Un coéquipier a déjà ce ${FIGURES[fig.nom].nom} : tu prends le ${COUVRE_CHEFS[impose].nom.toLowerCase()}.`);
+        setTimeout(() => setNotice(""), 5000);
+      }
+    }
+    p.fig = fig;
+  });
+  const changerNumero = n => mutate(g => {
+    const p = g.players.find(x => x.id === meId);
+    if (!p) return;
+    if (!numeroDisponible(g, n, p.id)) {
+      setNotice(`Le numéro ${n} est déjà pris dans cette partie.`);
+      setTimeout(() => setNotice(""), 4000);
+      return;
+    }
+    p.fig = { ...p.fig, num: n };
+  });
 
   async function start() {
     const base = (await loadGame(code)) || game;
@@ -2926,6 +3006,23 @@ export default function Petanque() {
             )}
           </div>
         ))}
+        {me && me.fig && (
+          <div style={S.plaque}>
+            <label style={S.etiquette}>TA FIGURE</label>
+            <div style={S.carteProfil}>
+              <div style={S.profilPortrait}><Portrait fig={me.fig} taille={78} /></div>
+              <div style={S.profilTexte}>
+                <div style={S.profilNom}>{FIGURES[me.fig.nom].nom.toUpperCase()}</div>
+                <div style={S.profilTag}>{FIGURES[me.fig.nom].tag}</div>
+                <div style={S.profilDetail}>
+                  {COUVRE_CHEFS[me.fig.chef].nom} · polo {POLOS[me.fig.polo].nom.toLowerCase()}
+                  <span style={{ ...S.pastilleNum, background: TEAM_COLORS[me.team] }}>{me.fig.num}</span>
+                </div>
+              </div>
+            </div>
+            <button className="bs" style={{ minHeight: 44 }} onClick={() => setGalerie(true)}>CHOISIR MA FIGURE</button>
+          </div>
+        )}
         {isHost && (
           <div style={S.plaque}>
             <button className="bs" style={S.replier} aria-expanded={reglagesOuverts}
@@ -2982,6 +3079,52 @@ export default function Petanque() {
         {!isHost && (
           <div style={S.motInfo}>
             Terrain {terrainDe(game).nom}{game.sansTournee ? ", sans tournée" : ""} — {meneur?.name ?? "l'hôte"} lance la partie…
+          </div>
+        )}
+        {galerie && me && me.fig && (
+          <div style={S.voile} onClick={e => e.target === e.currentTarget && setGalerie(false)}>
+            <div style={S.plaqueGalerie}>
+              <div style={S.plaqueTitre}>CHOISIS TA FIGURE</div>
+              <div style={S.grilleFigures}>
+                {ORDRE_FIGURES.map(f => (
+                  <button key={f} className={"fig" + (me.fig.nom === f ? " prise" : "")}
+                          aria-label={FIGURES[f].nom} onClick={() => changerFigure("nom", f)}>
+                    <Portrait fig={{ ...me.fig, nom: f }} taille={66} chefPropre={me.fig.nom !== f} />
+                    <span style={S.figNom}>{FIGURES[f].nom.toUpperCase()}</span>
+                  </button>
+                ))}
+              </div>
+              <label style={S.etiquette}>COUVRE-CHEF</label>
+              <div style={S.rangee}>
+                {ORDRE_CHEFS.map(c => (
+                  <button key={c} className={me.fig.chef === c ? "bp" : "bs"} style={S.segment}
+                          onClick={() => changerFigure("chef", c)}>{COUVRE_CHEFS[c].nom.toUpperCase()}</button>
+                ))}
+              </div>
+              <label style={S.etiquette}>POLO</label>
+              <div style={S.rangee}>
+                {ORDRE_POLOS.map(c => (
+                  <button key={c} className={me.fig.polo === c ? "bp" : "bs"} style={{ ...S.segment, minHeight: 44 }}
+                          aria-label={POLOS[c].nom} onClick={() => changerFigure("polo", c)}>
+                    <span style={{ ...S.pastillePolo, background: POLOS[c].ton }} />
+                  </button>
+                ))}
+              </div>
+              <label style={S.etiquette}>NUMÉRO</label>
+              <div style={S.grilleNums}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => {
+                  const libre = numeroDisponible(game, n, meId);
+                  const mien = me.fig.num === n;
+                  return (
+                    <button key={n} className={"bi p" + (mien ? "" : libre ? "" : " eteint")}
+                            style={{ ...S.caseNum, ...(mien ? S.caseNumPrise : null) }}
+                            disabled={!libre && !mien} onClick={() => changerNumero(n)}>{n}</button>
+                  );
+                })}
+              </div>
+              <p style={S.note}>Le numéro se lit dans le dos, depuis le fond du terrain. Il distingue deux joueurs qui ont pris la même figure.</p>
+              <button className="bp" style={{ minHeight: 44 }} onClick={() => setGalerie(false)}>C'EST MOI</button>
+            </div>
           </div>
         )}
         <div style={S.outils}>
@@ -3230,6 +3373,16 @@ export default function Petanque() {
                 <div style={S.popinSous}>{TEAM_NAMES[t]} finit à zéro : {game.sansTournee ? "il faut embrasser Fanny." : "la tournée de pastis est pour eux."}</div>
               </div>
             ))}
+            {me?.fig && !estApp() && (
+              <div style={S.gardeFigure}>
+                <Portrait fig={me.fig} taille={64} />
+                <div style={S.gardeTexte}>
+                  <b>{FIGURES[me.fig.nom].nom}</b> repart avec la partie.
+                  <br />Dans l'app, il reste ton personnage.
+                </div>
+                <a className="bs" style={S.gardeLien} href="https://petanque.app" target="_blank" rel="noreferrer">GARDER MON PERSONNAGE</a>
+              </div>
+            )}
             {isHost && <button className="bp" style={{ marginTop: 4 }} onClick={resetGame}>NOUVELLE PARTIE</button>}
           </div>
           </div>
@@ -3357,6 +3510,39 @@ const styles = {
   etiquette: { fontSize: 12, fontWeight: 600, letterSpacing: 1.5, color: NUIT },
   note: { fontSize: 12, lineHeight: 1.4, margin: "-4px 0 0", color: NUIT, opacity: 0.75, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" },
   rangee: { display: "flex", gap: 8, alignItems: "stretch" },
+  // --- figures : carte de profil au salon, et galerie de choix
+  carteProfil: { display: "flex", alignItems: "center", gap: 12 },
+  profilPortrait: {
+    width: 84, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+    background: "#faf6ea", border: `2px solid ${NUIT}`, borderRadius: 6, overflow: "hidden",
+  },
+  profilTexte: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
+  profilNom: { fontFamily: "'Alfa Slab One', serif", fontSize: 16, color: NUIT, fontWeight: 400, lineHeight: 1.1 },
+  profilTag: { fontSize: 11, fontWeight: 500, color: NUIT, opacity: 0.75 },
+  profilDetail: { fontSize: 11, fontWeight: 600, color: NUIT, display: "flex", alignItems: "center", gap: 6, marginTop: 2 },
+  pastilleNum: {
+    width: 20, height: 20, borderRadius: "50%", color: "#ffffff", fontSize: 12, fontWeight: 700,
+    display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px #4a2f16",
+  },
+  plaqueGalerie: {
+    width: "100%", maxWidth: 360, boxSizing: "border-box", background: CREME, color: NUIT,
+    border: `3px solid ${NUIT}`, borderRadius: 8,
+    boxShadow: `0 5px 0 rgba(0, 0, 0, 0.45), inset 0 0 0 4px ${CREME}, inset 0 0 0 6px ${NUIT}`,
+    padding: "18px 14px 14px", display: "flex", flexDirection: "column", gap: 8,
+    maxHeight: "92dvh", overflowY: "auto",
+  },
+  grilleFigures: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 },
+  figNom: { fontSize: 9, fontWeight: 700, letterSpacing: 0.5, color: NUIT, lineHeight: 1.1, textAlign: "center" },
+  grilleNums: { display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: 4 },
+  caseNum: { width: "100%", minWidth: 0 },
+  caseNumPrise: { background: PASTIS, borderColor: NUIT },
+  pastillePolo: { width: 22, height: 22, borderRadius: "50%", boxShadow: "0 0 0 2px #4a2f16", display: "inline-block" },
+  gardeFigure: {
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginTop: 6,
+    paddingTop: 12, borderTop: `2px solid rgba(29, 58, 79, 0.25)`, width: "100%",
+  },
+  gardeTexte: { fontSize: 12, lineHeight: 1.4, color: NUIT, textAlign: "center" },
+  gardeLien: { minHeight: 44, padding: "0 14px", fontSize: 13, textDecoration: "none" },
   // En-tête du panneau repliable : pleine largeur, 44 px de plancher tactile
   replier: { width: "100%", minHeight: 44, padding: "0 12px", fontSize: 13, letterSpacing: 1.5, justifyContent: "space-between" },
   chevron: { fontSize: 14, lineHeight: 1, transition: "transform .18s ease" },

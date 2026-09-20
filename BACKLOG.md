@@ -254,6 +254,23 @@ Deux décisions de Flavio appliquées : expiration à **2 minutes**, décompte v
 
 Le joueur remplacé récupère sa place par le chemin déjà en place — « JE REPRENDS » s'affiche, et rejoindre par son prénom le dé-robotise.
 
+## 🧑‍🌾 Lot 1 — les neuf figures et le numéro unique
+
+Tracés repris de `docs/maquette-choix-figure.html`, qui fait foi. Seule la couleur du torse est rendue variable : c'est le polo. Nouveau fichier `figures.jsx`.
+
+| Ce qui doit être prouvé | Preuve | Résultat |
+|---|---|---|
+| Neuf figures sélectionnables | `tests/figures.js` + capture de la galerie | 9 déclarées, 9 tracés tous différents ✅ |
+| Chacune identifiable à sa silhouette | capture des neuf à **30 px de haut**, taille réelle en jeu | chignon, casquette d'uniforme, chapeau de paille, calot, bandeau : lisibles ✅ |
+| Numéro unique dans la partie | 9 joueurs entrent | numéros 1 à 9, tous distincts ✅ |
+| Un changement vers un numéro pris est refusé | `numeroDisponible` | refusé, et hors de 1-9 refusé aussi ✅ |
+| Même équipe + même figure = couvre-chefs différents | 2ᵉ puis 3ᵉ joueur | béret → casquette → paille, trois chefs distincts, avec message au joueur ✅ |
+| Aucune mémorisation navigateur de la figure | grep sur la source **et** le build | seuls `petanque.tuto` et `petanque.curseurs` existent ; aucun stockage ne touche à la figure ✅ |
+| Les bots suivent la même règle | `tests/figures.js` | figure et numéro attribués, piochés dans les neuf mêmes ✅ |
+| Le polo ne s'affiche pas sur le terrain | — | **au lot 1 le terrain ne dessine aucune figure** : la question se prouve au lot 2, où `Portrait` reçoit `polo={false}` |
+
+**Écart assumé, signalé.** La mission fait du couvre-chef un axe de personnalisation *et* le signe distinctif de plusieurs figures. Poser le chef choisi sur les neuf portraits les rendait indistinguables, ce qui contredit le critère de reconnaissance à la silhouette. Arbitrage : dans la galerie, chaque figure garde **son** couvre-chef d'origine ; le chef choisi ne se pose que sur la figure retenue, sur la carte de profil et en jeu.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |

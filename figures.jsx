@@ -46,13 +46,19 @@ export const ORDRE_POLOS = ["creme", "moutarde", "olive", "nuit"];
 
 export const figureValide = f => !!f && !!FIGURES[f.nom] && !!COUVRE_CHEFS[f.chef] && !!POLOS[f.polo];
 
-// Le portrait : figure, polo, couvre-chef choisi par-dessus.
-// `polo` peut être forcé à null pour un rendu sans couleur personnelle.
-export function Portrait({ fig, taille = 104, polo = true }) {
+// Le portrait.
+//   `polo`       : à false, le torse reste crème — sur le terrain, seule
+//                  l'équipe compte, jamais la coquetterie.
+//   `chefPropre` : à true, la figure garde SON couvre-chef d'origine, celui
+//                  qui la signe. C'est le rendu de la galerie : un béret posé
+//                  sur les neuf portraits les rendrait indistinguables, alors
+//                  que la reconnaissance à la silhouette est le critère.
+//                  Ailleurs, le couvre-chef choisi se pose par-dessus.
+export function Portrait({ fig, taille = 104, polo = true, chefPropre = false }) {
   if (!fig || !FIGURES[fig.nom]) return null;
   const f = FIGURES[fig.nom];
   const ton = polo && POLOS[fig.polo] ? POLOS[fig.polo].ton : "#f6f0e2";
-  const chef = COUVRE_CHEFS[fig.chef];
+  const chef = chefPropre ? null : COUVRE_CHEFS[fig.chef];
   const html = f.corps.replace("{POLO}", ton) + (chef ? chef.dessin : "");
   return (
     <svg width={taille} height={Math.round((taille * 124) / 140)} viewBox="0 0 140 124"
