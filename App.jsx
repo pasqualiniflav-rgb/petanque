@@ -22,8 +22,10 @@ const VIEW_H = 520 + HAUT_VUE + HORS_B;
 // bande de sable hors-jeu où se plantent les poteaux du panneau. Elle a son
 // PROPRE canvas, en pixels CSS 1:1, hors du canvas du terrain : le sol ne
 // défile donc jamais sous les pieds du panneau, et les cotes des maquettes
-// s'appliquent au pixel près (118 px — maquette-jeu.html).
-const BANDE_H = 118;
+// s'appliquent au pixel près. Portée de 118 à 130 px pour que le compteur,
+// descendu et rétréci, laisse voir le ciel, les maisons et les platanes
+// au-dessus de lui et le sol de la place derrière.
+const BANDE_H = 130;
 const decorLargeur = () => VIEW_W + 120; // décor plus large : parallaxe sur le grand terrain
 export function reglerLargeurVue(w) {
   // Vers le haut, pas un pixel de côté ; sur un téléphone étroit la fenêtre
@@ -695,6 +697,12 @@ function dessinerPhotoDecor(cx, W, H) {
 function dessinerDecorStylise(cx, W, H) {
   let seed = 20260917;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // Ligne de sol du village : tout le décor — collines, façades, platanes,
+  // soleil — se cale dessus et non sur la hauteur totale de la bande. Le
+  // village reste donc entièrement VISIBLE au-dessus de la plaque, qui est
+  // posée plus bas, et le sol de la place passe derrière elle.
+  const G = Math.round(H * 0.308);
+  const ech = G / 66; // les platanes rapetissent avec la place qu'on leur laisse
 
   const ciel = cx.createLinearGradient(0, 0, 0, H);
   ciel.addColorStop(0, "#3f95cd");
@@ -704,7 +712,7 @@ function dessinerDecorStylise(cx, W, H) {
   cx.fillStyle = ciel; cx.fillRect(0, 0, W, H);
 
   // soleil bas et son halo
-  const sx = W * 0.8, sy = H * 0.34;
+  const sx = W * 0.8, sy = G * 0.6;
   const halo = cx.createRadialGradient(sx, sy, 1, sx, sy, H * 1.1);
   halo.addColorStop(0, "rgba(255,247,209,0.95)");
   halo.addColorStop(0.16, "rgba(255,227,152,0.45)");
@@ -723,12 +731,12 @@ function dessinerDecorStylise(cx, W, H) {
     }
     cx.lineTo(W, H); cx.closePath(); cx.fill();
   };
-  colline(H * 0.5, 0.6, "#8fa9b2");
-  colline(H * 0.57, 2.1, "#6b8a7e");
+  colline(G * 0.89, 0.6, "#8fa9b2");
+  colline(G * 1.02, 2.1, "#6b8a7e");
 
   // rangée de façades et toits de tuiles. Le sol de la place laisse voir
   // 30 px sous la plaque, comme dans maquette-jeu.html.
-  const solVillage = H * 0.56;
+  const solVillage = G;
   const facades = ["#e6cfa4", "#d9b98b", "#cfa878", "#e9d9b6", "#c99a6c"];
   let x = -16, k = 0;
   while (x < W + 12) {
@@ -763,7 +771,7 @@ function dessinerDecorStylise(cx, W, H) {
 
   // platanes : ombre au sol, tronc tacheté, puis couronne de feuillage
   const troncs = [W * 0.04, W * 0.24, W * 0.46, W * 0.68, W * 0.9];
-  const hautTronc = H * 0.3;
+  const hautTronc = G * 0.5;
   for (const tx of troncs) {
     cx.fillStyle = "rgba(60,48,26,0.25)";
     cx.beginPath(); cx.ellipse(tx - 10, solVillage + 4, 16, 3.4, 0, 0, Math.PI * 2); cx.fill();
@@ -795,9 +803,9 @@ function dessinerDecorStylise(cx, W, H) {
     }
   };
   for (const tx of troncs) {
-    couronne(tx, H * 0.19, 17, "#39592b", 14);
-    couronne(tx - 3, H * 0.15, 14, "#4f7433", 12);
-    couronne(tx + 4, H * 0.11, 11, "#77a044", 9); // touches de soleil sur le dessus
+    couronne(tx, G * 0.34, 17 * ech, "#39592b", 14);
+    couronne(tx - 3, G * 0.26, 14 * ech, "#4f7433", 12);
+    couronne(tx + 4, G * 0.18, 11 * ech, "#77a044", 9); // touches de soleil sur le dessus
   }
 }
 
@@ -1497,7 +1505,7 @@ export function drawField(ctx, st, bodiesOverride, aim, ivresse, T) {
 // boutons imprimés à ombre dure, chiffres Oswald, titres Alfa Slab One.
 // Les valeurs viennent des maquettes validées, reprises telles quelles.
 
-const CREME = "#f2ecdc", NUIT = "#1d3a4f", ARDOISE = "#2e2a24", PASTIS = "#f6c324";
+const CREME = "#f2ecdc", NUIT = "#1d3a4f", PASTIS = "#f6c324";
 
 const CSS_BASE = `
 .bp,.bs,.bi{font-family:'Oswald',sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;box-sizing:border-box}
@@ -2036,7 +2044,7 @@ export default function Petanque() {
   }, []);
 
   // Rejoue un lancer sur cet appareil (flux entrant, ou bouton « Revoir »)
-  const lancerAnimationReplay = useCallback((g, etiquette) => {
+  const lancerAnimationReplay = useCallback((g, revoir) => {
     const cv = canvasRef.current;
     if (!cv || !g.replay || g.phase === "lobby") return;
     const Tg = terrainDe(g);
@@ -2048,10 +2056,9 @@ export default function Petanque() {
     const moi = g.players.find(p => p.id === meIdRef.current);
     const ivresse = Math.min(6, (g.drinks && moi && g.drinks[moi.team]) || 0);
     const who = g.players.find(p => p.id === g.replay.thrown.pid);
-    if (etiquette) setNotice(etiquette);
     poserAnimating(true);
     const ctx = cv.getContext("2d");
-    const marquer = !etiquette; // un « Revoir » ne recreuse pas le terrain
+    const marquer = !revoir; // un « Revoir » ne recreuse pas le terrain
     let frames = 0;
     const finir = () => {
       if (marquer) fusionnerTraces();
@@ -2086,7 +2093,7 @@ export default function Petanque() {
     // Le top départ vient de l'horloge du lanceur : on le borne, une horloge
     // décalée ne doit ni retarder le rejeu de dix secondes ni le faire
     // partir avant que l'annonce soit complète.
-    const delai = etiquette ? 0 : Math.min(1500, Math.max(0, (g.replay.startAt || 0) - Date.now()));
+    const delai = revoir ? 0 : Math.min(1500, Math.max(0, (g.replay.startAt || 0) - Date.now()));
     setTimeout(() => requestAnimationFrame(loop), delai);
   }, [poserAnimating, figer, rattraper]);
 
@@ -2645,7 +2652,7 @@ export default function Petanque() {
           return (
             <button className={cl + (peutRevoir ? "" : " eteint")} aria-label="Revoir le coup" title="Revoir le coup"
                     disabled={!peutRevoir}
-                    onClick={() => peutRevoir && lancerAnimationReplay(game, "Replay du dernier coup…")}>
+                    onClick={() => peutRevoir && lancerAnimationReplay(game, true)}>
               <Ico nom="rejouer" taille={t} couleur={peutRevoir ? NUIT : "#8a8f96"} />
             </button>
           );
@@ -2819,8 +2826,9 @@ export default function Petanque() {
     : (!animating && !gel) ? resteTemps : null;
   const NOMS_GRAVES = { A: "#1a6e9c", B: "#a63f2b", C: "#4b6a44" }; // lisibles sur le bois
   const trois = equipes.length > 2;
-  // Rails de maquette-jeu.html : 16 px de haut, à 5 px puis 25 px du haut
-  const railH = trois ? 12 : 16, railPas = trois ? 17 : 20, railTop = trois ? 4 : 5;
+  // Rails resserrés : 15 px de haut, à 4 px puis 21 px du haut. Les chiffres
+  // gardent leur corps de 10 px — c'est la lisibilité des crans qui commande.
+  const railH = trois ? 11 : 15, railPas = trois ? 14 : 17, railTop = trois ? 3 : 4;
   const rail = (t, i) => {
     const sc = Math.max(0, Math.min(13, game.scores[t] || 0));
     return (
@@ -2829,7 +2837,7 @@ export default function Petanque() {
           <span key={n} style={{ ...S.railChiffre, visibility: n === sc ? "hidden" : "visible" }}>{n}</span>
         ))}
         {/* le jeton glisse le long du rail jusqu'à sa case (transition CSS) */}
-        <span style={{ ...S.jeton, width: trois ? 12 : 14, height: trois ? 12 : 14, background: TEAM_COLORS[t], left: `calc(3px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 6px))` }}>{sc}</span>
+        <span style={{ ...S.jeton, width: trois ? 10 : 13, height: trois ? 10 : 13, background: TEAM_COLORS[t], left: `calc(3px + ${((sc + 0.5) / 14).toFixed(5)} * (100% - 6px))` }}>{sc}</span>
       </div>
     );
   };
@@ -2871,11 +2879,11 @@ export default function Petanque() {
       <div style={S.plaqueBois}>
         {equipes.map(rail)}
         {trois ? (
-          <div style={{ ...S.bandeau, top: 58, fontSize: 10 }}>
+          <div style={{ ...S.bandeau, top: 43, fontSize: 10 }}>
             {flanc(equipes[0], "gauche")}{flanc(equipes[1], "centre")}{flanc(equipes[2], "droite")}
           </div>
         ) : (
-          <div style={{ ...S.bandeau, top: 46 }}>
+          <div style={{ ...S.bandeau, top: 39 }}>
             {flanc(equipes[0], "gauche")}{ligneCentre}{equipes[1] ? flanc(equipes[1], "droite") : <span style={S.flanc} />}
           </div>
         )}
@@ -2898,7 +2906,7 @@ export default function Petanque() {
   );
   const surimpressions = (
     <>
-      {texteArdoise && <div style={S.ardoiseBandeau}>{texteArdoise}</div>}
+      {texteArdoise && <div style={S.motTerrain}>{texteArdoise}</div>}
       {cri && <div style={S.criPlaque}><span style={S.criTexte}>{cri}</span></div>}
       {!me && game.phase !== "finished" && plaqueInfo(
         <><Ico nom="oeil" taille={16} /> Tu regardes la partie.</>,
@@ -3091,9 +3099,8 @@ const styles = {
   equipeTete: { display: "flex", alignItems: "center", gap: 8 },
   equipeNom: { fontSize: 15, fontWeight: 700, letterSpacing: 2 },
   puces: { display: "flex", flexWrap: "wrap", gap: 6 },
-  // HORS TERRAIN, un message passager est une PLAQUE ÉMAILLÉE de la charte —
-  // jamais une bande sombre posée dans le flux. L'ardoise, elle, ne vit que
-  // sur le terrain (ardoiseBandeau), en surimpression.
+  // Message passager HORS terrain : plaque émaillée de la charte. Sur le
+  // terrain, c'est motTerrain, même langage. Plus aucune bande sombre.
   motInfo: {
     width: "100%", maxWidth: 390, boxSizing: "border-box",
     background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
@@ -3101,16 +3108,15 @@ const styles = {
     padding: "7px 12px", textAlign: "center",
     fontSize: 12, fontWeight: 600, letterSpacing: 0.5,
   },
-  // Bandeau d'information de la charte : bande ardoise OPAQUE, pleine largeur,
-  // collée en HAUT du terrain, juste sous la bande fixe. Jamais flottante au
-  // milieu, jamais un cartouche sombre arrondi, et surtout en surimpression :
-  // elle ne prend pas un pixel de hauteur au terrain. C'est le seul canal des
-  // messages passagers — replay, arrivée d'un joueur, complément d'équipe.
-  ardoiseBandeau: {
-    position: "absolute", left: 0, right: 0, top: 0, zIndex: 4, boxSizing: "border-box",
-    background: ARDOISE, color: CREME, fontSize: 12, fontWeight: 600, letterSpacing: 1,
-    borderBottom: "2px solid #8a6b43", fontFamily: "'Oswald', sans-serif",
-    padding: "6px 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+  // Message passager SUR le terrain : plaque émaillée de la charte, posée en
+  // surimpression sous la bande fixe. Plus aucune bande sombre nulle part —
+  // ni dans le flux, ni sur le terrain. Elle ne prend pas un pixel au terrain.
+  motTerrain: {
+    position: "absolute", left: 6, right: 6, top: 6, zIndex: 4, boxSizing: "border-box",
+    background: CREME, color: NUIT, border: `2px solid ${NUIT}`, borderRadius: 4,
+    boxShadow: "0 3px 0 rgba(0, 0, 0, 0.35)", fontFamily: "'Oswald', sans-serif",
+    fontSize: 12, fontWeight: 600, letterSpacing: 0.5,
+    padding: "6px 10px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
   // Le cri du Sud : plaque posée sur le terrain, le temps de le dire
   criPlaque: {
@@ -3155,7 +3161,7 @@ const styles = {
   // Le fronton du boulodrome
   // La plaque de bois à rails, valeurs de maquette-scoreboard.html
   plaqueBois: {
-    position: "absolute", top: 8, left: 10, right: 10, height: 68, zIndex: 3, boxSizing: "content-box",
+    position: "absolute", top: 40, left: 10, right: 10, height: 54, zIndex: 3, boxSizing: "content-box",
     background: "repeating-linear-gradient(180deg, rgba(122, 90, 53, 0.14) 0 3px, rgba(0, 0, 0, 0) 3px 14px), linear-gradient(180deg, #c59a63, #a87d4b)",
     border: "3px solid #7a5a35", borderRadius: 8,
     boxShadow: "0 4px 0 rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(74, 47, 22, 0.35)",
@@ -3163,13 +3169,13 @@ const styles = {
   },
   // Poteaux : bois foncé contrasté, 10 x 34 px, plantés à 28 % et 72 %
   poteau: {
-    position: "absolute", top: 74, width: 10, height: 34, marginLeft: -5, zIndex: 2,
+    position: "absolute", top: 92, width: 10, height: 34, marginLeft: -5, zIndex: 2,
     background: "linear-gradient(90deg, #8a6540, #6b4e30)", borderRadius: 2,
   },
   // Ombre de la charte : DURE et COURTE, un simple trait sous chaque pied.
   // 34 x 5 px, jamais une barre qui traverse le terrain.
   plaqueOmbre: {
-    position: "absolute", top: 106, width: 34, height: 5, marginLeft: -17, zIndex: 1,
+    position: "absolute", top: 124, width: 34, height: 5, marginLeft: -17, zIndex: 1,
     borderRadius: 3, background: "rgba(70, 55, 30, 0.28)",
   },
   rail: {
@@ -3186,7 +3192,7 @@ const styles = {
   bandeau: { position: "absolute", left: 12, right: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#4a2f16", lineHeight: 1 },
   flanc: { flex: 1, display: "flex", alignItems: "center", gap: 3, minWidth: 0 },
   graveCentre: { flex: "0 0 auto", fontSize: 10, fontWeight: 600, letterSpacing: 2, color: "#4a2f16", textShadow: "0 1px 0 rgba(255, 240, 214, 0.35)", whiteSpace: "nowrap" },
-  microLigne: { position: "absolute", top: 86, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif", color: "#4a2f16" },
+  microLigne: { position: "absolute", top: 102, left: 0, right: 0, zIndex: 3, textAlign: "center", fontFamily: "'Oswald', sans-serif", color: "#4a2f16" },
   // Voile sombre des pop-ins
   voile: {
     position: "fixed", inset: 0, zIndex: 60, background: "rgba(16, 20, 11, 0.78)",

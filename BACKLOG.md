@@ -190,6 +190,16 @@ Maquettes `maquette-jeu.html` et `maquette-terrain-long.html` remplacées par Fl
 - **Le grand terrain ne montre que ~53 % de sa largeur** : les lignes de côté sortent du cadre, alors que la maquette les montre.
 - **Blocage au cochonnet** reproduit sur le build commité : `enCours` reste vrai et avale le lancer en silence pendant 8 s.
 
+## 🧹 Lot 0 — avant le parcours figure *(mission-parcours-figure.md)*
+
+| # | Item | État |
+|---|------|------|
+| 0.1 | **Toast noir, 2ᵉ chasse — le composant, pas la chaîne.** Le coupable était `styles.ardoiseBandeau` (fond `ARDOISE` `#2e2a24`, quasi noir), alimenté par `texteArdoise` et déclenché entre autres par l'étiquette « Replay du dernier coup… ». Supprimés : le style, la constante `ARDOISE`, et l'étiquette — qui servait aussi de drapeau « ce rejeu ne recreuse pas le terrain », remplacée par un booléen `revoir`. Les messages passent en plaque émaillée (`motTerrain`), en surimpression, sans prendre un pixel au terrain. Preuve : les deux greps rendent 0 sur `App.jsx` **et** sur `app.js` | ✅ |
+| 0.2 | **Compteur à rails rétréci et descendu.** Mesuré à 390 px : la plaque passe de 74 à 60 px et descend de 8 à 40 px du haut de la bande ; le décor visible au-dessus passe de **8 à 40 px** (×5), le sol de la place se voit sur 30 px derrière elle. Bande 118 → 130 px, terrain 636 → 624 px (−12). Rails 16 → 15 px, jeton 14 → 13 px. **Les crans 1-13 ne bougent pas** : corps de 10 px et 24,57 px par cran, identiques avant et après — la lisibilité n'a pas été rognée. Le décor se cale désormais sur sa ligne de sol et non sur la hauteur de bande, donc le village tient entier au-dessus de la plaque | ✅ |
+| 0.3 | Pause et reprise | ⏸ **en attente de validation** — proposition d'accrochage remise à Flavio avant toute ligne de code |
+
+Vérifié à 390 × 844 et à 360 × 740, sur les deux terrains. Physique non touchée : six bancs au vert.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |

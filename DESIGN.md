@@ -17,7 +17,7 @@ boulodrome municipal — jamais la carte sombre arrondie générique.
 | Équipe rouge (garance) | `#bd4f3a` |
 | Équipe sauge | `#7f9f78` |
 | Jaune pastis (action principale) | `#f6c324` |
-| Ardoise (bandeaux d'info sur le terrain) | `#2e2a24`, opaque |
+| ~~Ardoise~~ | **Retirée.** Le bandeau sombre a été chassé deux fois ; il n'existe plus nulle part. |
 
 Interdits : violets, roses, dégradés multicolores, néons (une seule exception :
 la lueur des chiffres du scoreboard, légitime façon panneau lumineux).
@@ -55,9 +55,11 @@ ombre dure décalée (2 px) ; état pressé = translation de l'ombre. Effet
 **Bouton secondaire** : crème, trait bleu nuit. **Bouton icône** : carré
 36-44 px, même langage.
 
-**Bandeau d'information sur le terrain** : bande « ardoise » opaque pleine
-largeur, collée en haut ou en bas du terrain (jamais flottante au milieu),
-texte crème, une ligne. Disparaît d'elle-même.
+**Message passager sur le terrain** : plaque émaillée, comme tout le reste —
+crème, liseré bleu nuit, ombre franche, une ligne, en surimpression sous la
+bande fixe. Elle ne prend pas un pixel au terrain et disparaît d'elle-même.
+**Aucune bande sombre nulle part**, ni dans le flux ni sur le terrain : c'est
+exactement le « toast noir » qu'on a dû chasser deux fois.
 
 **Scoreboard** : conserver l'esprit panneau lumineux existant ; l'habiller
 en fronton — cadre bleu nuit, chiffres Oswald jaunes lumineux, compteur
@@ -73,7 +75,7 @@ hauteur** : depuis le remplacement des maquettes, le terrain n'a plus de cadre
 bois — la bande fixe le borde en haut, la rangée de boutons en bas.
 **Le décor de village existant (ciel, façades, platanes) est conservé tel
 quel** — validé par Flavio, on ne le retouche pas ; seule la ligne de sol a
-été remontée pour tenir dans les 118 px de la bande. Traces et impacts
+été calée sur la ligne de sol du village, pour tenir dans les 130 px de la bande. Traces et impacts
 conservés.
 
 ## 5 bis. Maquettes de référence (validées)
@@ -86,13 +88,13 @@ maquette.
 ## 5 ter. Écran de jeu — budget vertical (maquette-jeu.html)
 
 Quatre bandes, sans gouttière ni padding : **barre d'icônes 46 px**, **bande
-fixe 118 px**, **terrain en `flex: 1 1 auto`**, **rangée de boutons 44 px**.
+fixe 130 px**, **terrain en `flex: 1 1 auto`**, **rangée de boutons 44 px**.
 Le total tombe pile sur la hauteur de l'écran ; tout pixel récupéré ailleurs
 va au terrain.
 
 La bande fixe a **son propre canvas**, dessiné en pixels CSS 1:1 — elle ne
 défile jamais et ne subit aucune mise à l'échelle. Le panneau s'y plante :
-plaque à 8 px du haut sur 68 px, poteaux de 10 × 34 px centrés à **28 % et
+plaque à 40 px du haut sur 54 px, poteaux de 10 × 34 px centrés à **28 % et
 72 % de la largeur de la bande**, et sous chaque pied une ombre **dure et
 courte de 34 × 5 px** (`rgba(70,55,30,.28)`). Rien d'autre n'est dessiné là :
 ni fondu sombre, ni ombre portée de feuillage.
@@ -102,9 +104,13 @@ dure 2 px. La zone de tap reste à 46 px par un débord invisible
 (`::after { inset: -6px 0 }` — la bordure de 2 px en absorbe 2 de chaque côté).
 Icônes : 34 px, tap 46 px, sur fond `#27607e`.
 
-Messages passagers : **sur le terrain**, le bandeau ardoise, en surimpression,
-collé en haut sous la bande fixe — il ne prend pas un pixel au terrain.
-**Hors terrain**, jamais de bande sombre : une plaque émaillée.
+Le compteur à rails n'est **pas collé au bord haut** : la plaque mesure 60 px
+bordures comprises et se pose 40 px sous le haut de la bande, pour que le ciel,
+les maisons et les platanes se voient au-dessus d'elle et le sol de la place
+derrière. Les crans 1-13 gardent leur corps de 10 px : c'est la lisibilité qui
+commande la hauteur des rails, jamais l'inverse.
+
+Messages passagers : plaque émaillée, sur le terrain comme ailleurs.
 
 ## 6. Lisibilité du geste
 
