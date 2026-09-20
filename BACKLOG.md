@@ -216,6 +216,23 @@ Ordre d'affichage des équipes : **ciel, rouge, sauge**, fixé par `TEAMS` et fi
 
 Vérifié à 390 × 844 et 360 × 740, à deux et à trois équipes, sur les deux terrains. Physique non touchée : six bancs au vert.
 
+## ⏱ Lot 0 préalable — l'horloge du tour s'ancre sur le tour
+
+Défaut trouvé en concevant la pause : l'horloge du tour était ré-ancrée à **chaque changement de `rev`**, et `saveGame` incrémente `rev` à chaque écriture. Un joueur qui rejoignait, une tournée choisie ou un réglage modifié **rendaient vingt secondes pleines** au joueur en train de viser. La pause, deux écritures de plus, l'aurait rendu truquable à volonté.
+
+Corrigé par une clé d'identité du tour, `cleDuTour(st, turnId)` : mène, joueur au tour, nombre de boules posées, cochonnet posé ou non. Elle ignore `rev`.
+
+| Ce qui doit être prouvé | Preuve | Résultat |
+|---|---|---|
+| Une écriture qui ne joue rien ne rallonge pas le chrono | `tests/chrono.js`, clé comparée | `rev` seul modifié : clé inchangée ✅ |
+| Un joueur qui rejoint en pleine partie | idem | clé inchangée ✅ |
+| Une tournée proposée, des réglages changés | idem | clé inchangée ✅ |
+| Le tour qui change fait bien repartir l'horloge | idem | boule jouée, mène suivante, cochonnet posé, partie finie : clé changée ✅ |
+| Le joueur au tour entre dans la clé | idem, à nombre de boules identique | `p2` vs `p1` : clé changée ✅ |
+| En vrai, à deux navigateurs | Panisse rejoint en pleine visée, chrono relevé toutes les 0,5 s | 7 6 6 5 5 **· arrivée ·** 4 4 3 3 2 2 1 1 — aucune remontée ✅ |
+
+La seule remontée observée est à +7,5 s : le chronomètre est arrivé à zéro et la boule est partie toute seule, c'est-à-dire un vrai tour suivant.
+
 ## 🏆 v2 — Compétitif (« chess.com de la pétanque »)
 
 | # | Item | Détail | Effort | Dépend de |

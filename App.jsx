@@ -101,6 +101,15 @@ for (const T of Object.values(TERRAINS)) {
   const glisse = (T.vTir * T.amorti * T.muRoll) / (1 - T.muRoll);
   T.airTir = p => Math.max(T.airMin, coef * T.vPoint(p) - glisse);
 }
+// Identité d'un tour de jeu. Elle change quand — et seulement quand — le tour
+// change : nouvelle mène, joueur différent, cochonnet posé, boule jouée.
+// Elle ignore `rev`, donc une écriture qui ne joue rien ne remet pas le
+// chronomètre à zéro.
+export function cleDuTour(st, turnId) {
+  if (!st || st.phase !== "playing" || !st.mene) return "";
+  return [st.mene.num, turnId || "-", st.mene.boules.length, st.mene.cochonnet ? 1 : 0].join("|");
+}
+
 const terrainDe = st => TERRAINS[(st && st.terrain) || "classique"];
 const departDe = T => ({ x: T.W / 2, y: T.L - 30 });
 
@@ -1931,16 +1940,12 @@ export default function Petanque() {
   gameRef.current = game;
 
   // Le chronomètre part du moment où CET appareil voit le tour commencer,
-  // jamais de l'horloge de celui qui a enregistré l'état : deux téléphones
-  // décalés de quelques secondes déclenchaient des lancers automatiques
-  // avant l'heure. Mis à jour au rendu même, pour que tout ce qui suit
-  // dans ce rendu lise déjà la bonne valeur.
-  const revVuRef = useRef(null);
+  // jamais de l'horloge de celui qui a enregistré l'état (deux téléphones
+  // décalés déclenchaient des lancers automatiques avant l'heure). L'ancre
+  // elle-même est posée plus bas, une fois `turnId` connu.
+  const tourVuRef = useRef(null);
   const tourDepuisRef = useRef(Date.now());
-  if (game && game.rev !== revVuRef.current) {
-    revVuRef.current = game.rev;
-    tourDepuisRef.current = Date.now();
-  }
+  const pauseDepuisRef = useRef(null);
   // Une tournée en attente bloque la mène suivante : personne ne lance
   // tant que l'équipe gagnante n'a pas choisi (ou laissé passer 20 s).
   const tourneeEnAttente = !!game && game.phase === "playing" && !!game.tourneePending;
@@ -1969,6 +1974,16 @@ export default function Petanque() {
   const isHost = !!meneur && meneur.id === meId;
   const turnId = game && game.phase === "playing" ? nextToPlay(game) : null;
   const myTurn = turnId !== null && turnId === meId && !me?.bot;
+  // L'horloge du tour s'ancre sur l'IDENTITÉ DU TOUR, plus sur `rev`.
+  // `rev` change à chaque écriture : un joueur qui rejoignait, une tournée
+  // choisie ou un réglage modifié rendaient vingt secondes pleines au joueur
+  // en train de viser. La clé ne bouge que quand le tour change vraiment.
+  const cleTour = cleDuTour(game, turnId);
+  if (cleTour !== tourVuRef.current) {
+    tourVuRef.current = cleTour;
+    tourDepuisRef.current = Date.now();
+    pauseDepuisRef.current = null;
+  }
   // Phase de visée : c'est mon tour et rien ne bouge. Déclaré ici, avant le
   // rendu du canvas qui s'en sert pour ancrer la caméra sur le cercle.
   const peutLancer = myTurn && !animating && !gel && !tourneeEnAttente;

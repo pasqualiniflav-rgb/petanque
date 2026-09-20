@@ -34,6 +34,14 @@ npx esbuild tests/portees.js --bundle --platform=node --alias:react=./tests/reac
 
 Tolérance : ±3 % sur les portées. Le script sort en erreur au premier écart.
 
+`tests/chrono.js` vérifie que l'horloge du tour s'ancre sur l'identité du
+tour et non sur `rev` : une écriture qui ne joue rien (joueur qui rejoint,
+tournée proposée, réglage changé) ne remet pas le chronomètre à zéro.
+
+```bash
+npx esbuild tests/chrono.js --bundle --platform=node --alias:react=./tests/react-vide.js --outfile=/tmp/chrono.cjs && node /tmp/chrono.cjs
+```
+
 `tests/bots.js` vérifie la règle « qui joue pour un bot » (hôte présent,
 hôte disparu, bot arrivé en cours de partie, joueur remplacé, hôte remplacé,
 lancer déjà annoncé) et que le cerveau accepte un joueur remplacé.
